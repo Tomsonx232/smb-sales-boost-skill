@@ -107,13 +107,13 @@
         "tags": ["Leads"],
         "operationId": "searchLeads",
         "summary": "Search and filter leads",
-        "description": "Search the lead database with keyword filters, location filters, and other criteria. Requires at least one positive filter (positiveKeywords or column-specific include terms). Uses a two-phase filtering model: Phase 1 (Include) combines all positive keywords with OR logic, Phase 2 (Exclude) removes matches via AND logic. Supports both 'home_improvement' and 'other' database types with different available columns.",
+        "description": "Search the lead database with keyword filters, location filters, and other criteria. Requires at least one positive filter (positiveKeywords or column-specific include terms). Uses a two-phase filtering model: Phase 1 (Include) combines all positive keywords with OR logic, Phase 2 (Exclude) removes matches via AND logic.\n\nTwo Database Types: The 'home_improvement' database contains contractor and home service businesses with phone numbers as the available contact method. The 'other' database contains all other business types (e.g., accounting firms, marketing agencies, medical practices) with both phone numbers and email addresses as available contact methods.\n\nWildcard Pattern Matching: All keyword and term parameters support `*` as a wildcard character that matches any sequence of characters. For example, `*account*` matches 'accounting', 'accountant', 'accounting firm', etc. Multiple wildcards in a single term let you match compound phrases: `*book*keep*` matches 'bookkeeping', 'bookkeeper services', etc. Other examples: `*market*agency*`, `*tax*prep*`. Keywords without wildcards perform substring matching by default (equivalent to wrapping in `*...*`).",
         "parameters": [
           { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 }, "description": "Page number" },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100, "maximum": 1000 }, "description": "Results per page (max 1000)" },
-          { "name": "database", "in": "query", "schema": { "type": "string", "enum": ["home_improvement", "other"] }, "description": "Database type. Defaults to your account setting." },
-          { "name": "positiveKeywords", "in": "query", "schema": { "type": "string" }, "description": "JSON array of keywords to include. Matched via OR across default columns." },
-          { "name": "negativeKeywords", "in": "query", "schema": { "type": "string" }, "description": "JSON array of keywords to exclude. Checked against same columns as positive keywords." },
+          { "name": "database", "in": "query", "schema": { "type": "string", "enum": ["home_improvement", "other"] }, "description": "Database type. 'home_improvement' contains contractors/home service businesses (phone numbers only). 'other' contains all other business types (phone numbers and email addresses). Defaults to your account setting." },
+          { "name": "positiveKeywords", "in": "query", "schema": { "type": "string" }, "description": "JSON array of keywords to include. Matched via OR across default columns. Supports * wildcard for flexible pattern matching (e.g., [\"*account*\", \"*book*keep*\", \"*tax*prep*\"]). Keywords without wildcards perform substring matching by default." },
+          { "name": "negativeKeywords", "in": "query", "schema": { "type": "string" }, "description": "JSON array of keywords to exclude. Checked against same columns as positive keywords. Supports * wildcard (e.g., [\"*franchise*\"])." },
           { "name": "orColumns", "in": "query", "schema": { "type": "string" }, "description": "JSON array of column names for keyword matching. Overrides defaults for both positive and negative keywords." },
           { "name": "stateInclude", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated US state codes to include (e.g. CA,NY,TX)" },
           { "name": "stateExclude", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated US state codes to exclude" },
@@ -863,10 +863,10 @@
                 "type": "object",
                 "required": ["companyName", "companyDescription", "productService"],
                 "properties": {
-                  "companyName": { "type": "string", "description": "Your company name", "example": "Acme Dental Supply" },
-                  "companyDescription": { "type": "string", "description": "What your company does", "example": "We sell dental equipment and supplies to dental practices" },
-                  "productService": { "type": "string", "description": "Specific product or service you sell", "example": "Dental chairs, X-ray machines, supplies" },
-                  "companyWebsite": { "type": "string", "description": "Your company website URL (optional, used for AI analysis)", "example": "https://acmedentalsupply.com" },
+                  "companyName": { "type": "string", "description": "Your company name", "example": "Acme Business Solutions" },
+                  "companyDescription": { "type": "string", "description": "What your company does", "example": "We provide accounting software and bookkeeping services to small businesses" },
+                  "productService": { "type": "string", "description": "Specific product or service you sell", "example": "Cloud accounting software, payroll services, tax preparation" },
+                  "companyWebsite": { "type": "string", "description": "Your company website URL (optional, used for AI analysis)", "example": "https://acmebusinesssolutions.com" },
                   "smbType": { "type": "string", "enum": ["home_improvement", "other"], "description": "Which database to suggest categories from" },
                   "excludeCategories": { "type": "array", "items": { "type": "string" }, "description": "Categories to exclude from suggestions" }
                 }
@@ -1059,7 +1059,7 @@
       },
       "Lead": {
         "type": "object",
-        "description": "Lead data. Fields vary by database type (home_improvement vs other).",
+        "description": "Lead data. Fields vary by database type. Home Improvement database provides phone numbers as contact info. Other database provides both phone numbers and email addresses.",
         "properties": {
           "id": { "type": "integer" },
           "companyName": { "type": "string", "nullable": true, "description": "Business name" },

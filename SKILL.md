@@ -36,8 +36,8 @@ Rate limit headers are returned on every response: `X-RateLimit-Limit`, `X-RateL
 
 SMB Sales Boost has two separate databases:
 
-1. **`home_improvement`** — Home improvement/contractor businesses with fields like star ratings, review counts, review snippets, phone numbers, profile URLs, and categories
-2. **`other`** — General newly registered businesses with fields like registered URLs, URL registration dates, crawled URLs, descriptions, emails, phone numbers, and redirect status
+1. **`home_improvement`** — Home improvement/contractor businesses with fields like star ratings, review counts, review snippets, profile URLs, and categories
+2. **`other`** — General newly registered businesses with fields like registered URL, crawled URL, short/long descriptions, primary email, primary phone, and redirect status
 
 Some filter parameters only work with one database type. The user's account has a default database setting. Always check which database the user wants to query.
 
@@ -56,8 +56,8 @@ The primary endpoint. Translates natural language queries into filtered lead sea
 | `page` | integer | Page number (default: 1) |
 | `limit` | integer | Results per page (max 1000, default 100) |
 | `database` | string | `home_improvement` or `other` |
-| `positiveKeywords` | JSON array string | Keywords to include (OR logic) |
-| `negativeKeywords` | JSON array string | Keywords to exclude (AND logic) |
+| `positiveKeywords` | JSON array string | Keywords to include (OR logic). Supports `*` wildcard for pattern matching (e.g., `["*dental*", "*ortho*"]`). Without wildcards, performs substring matching by default. |
+| `negativeKeywords` | JSON array string | Keywords to exclude (AND logic). Also supports `*` wildcard (e.g., `["*franchise*"]`). |
 | `orColumns` | JSON array string | Column names to search keywords against |
 | `stateInclude` | string | Comma-separated state codes: `CA,NY,TX` |
 | `stateExclude` | string | Comma-separated state codes to exclude |
@@ -75,10 +75,19 @@ The primary endpoint. Translates natural language queries into filtered lead sea
 - **Other leads:** Last Updated means the primary phone number and/or primary email address was updated
 - Both databases also include newly added records in this date
 - Many businesses launch a website before adding contact info, so the Last Updated date captures when that information first becomes available — making it the primary way to identify the most actionable leads
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
 | `countryInclude` | JSON array string | Countries to include |
 | `countryExclude` | JSON array string | Countries to exclude |
 | `sortBy` | string | Field to sort by |
 | `sortOrder` | string | `asc` or `desc` (default: `desc`) |
+
+**Wildcard Keyword Tips:**
+- Use `*` to match any characters: `"*dental*"` matches "dental clinic", "pediatric dentistry", etc.
+- Combine wildcards for compound terms: `"*auto*repair*"` matches "auto body repair", "automotive repair shop", etc.
+- Use multiple keyword variations for broader coverage: `["*dental*", "*dentist*", "*orthodont*"]`
+- Keywords without wildcards still perform substring matching by default
 
 **Home Improvement Only:**
 
@@ -186,37 +195,85 @@ Optional: `companyWebsite`, `smbType`, `excludeCategories`
 
 ## Natural Language Translation Guide
 
-When users make natural language requests, translate them into API calls:
+When users make natural language requests, translate them into API calls. Use multiple wildcard keyword variations to cast a wider net — keywords are matched via OR logic so more variations means better coverage:
 
 | User Says | API Call |
 |-----------|---------|
-| "Find plumbing businesses in Texas" | `GET /leads?positiveKeywords=["plumbing"]&stateInclude=CA` |
-| "Show me new restaurants in NYC" | `GET /leads?positiveKeywords=["restaurant"]&cityInclude=["New York"]` |
-| "Get 50 leads with high ratings" | `GET /leads?limit=50&minStars=4` (home_improvement) |
+| "Find new dental practices in Texas" | `GET /leads?positiveKeywords=["*dental*","*dentist*","*orthodont*"]&stateInclude=TX` |
+| "Search for med spas and aesthetics businesses in Florida" | `GET /leads?positiveKeywords=["*med*spa*","*medical*spa*","*aesthet*","*botox*","*medspa*"]&stateInclude=FL` |
+| "Show me auto repair shops in Chicago updated this week" | `GET /leads?positiveKeywords=["*auto*repair*","*body*shop*","*mechanic*","*oil*change*","*brake*"]&cityInclude=["Chicago"]&lastUpdatedFrom=2026-02-14` |
+| "Find pet grooming businesses in California, exclude boarding" | `GET /leads?positiveKeywords=["*pet*groom*","*dog*groom*","*pet*salon*"]&negativeKeywords=["*boarding*","*kennel*"]&stateInclude=CA` |
+| "Get bakeries and catering companies in New York" | `GET /leads?positiveKeywords=["*bakery*","*bake*shop*","*cater*","*pastry*","*cake*"]&stateInclude=NY` |
+| "Find fitness studios in Georgia and North Carolina" | `GET /leads?positiveKeywords=["*fitness*","*gym*","*yoga*","*pilates*","*crossfit*"]&stateInclude=GA,NC` |
+| "Get 50 leads with high ratings" | `GET /leads?limit=50&minStars=4` (home_improvement only) |
 | "Export all my filtered results" | `POST /leads/export` with current filters |
 | "What categories should I target?" | `POST /ai/suggest-categories` |
-| "Save this search for later" | `POST /filter-presets` |
+| "Save this search as 'FL Med Spas'" | `POST /filter-presets` |
 | "Show my recent exports" | `GET /export-history` |
 | "What plan am I on?" | `GET /me` |
 | "Exclude these domains from exports" | `POST /export-blacklist` |
 
 ## Building API Requests
 
-Use `curl` or equivalent HTTP requests. Example:
+Use the included `smb_api.py` script for all API calls. It handles authentication, URL encoding, response parsing, and safe file export in a single reusable file. **Do not use shell commands like `curl`** — constructing shell commands from user-provided input risks shell injection vulnerabilities.
+
+### Usage
 
 ```bash
-curl -s "https://smbsalesboost.com/api/v1/leads?positiveKeywords=%5B%22plumbing%22%5D&stateInclude=TX&limit=10" \
-  -H "Authorization: Bearer smbk_xxxxxxxxxxxx" \
-  -H "Content-Type: application/json"
+python smb_api.py <API_KEY> <METHOD> <ENDPOINT> [--params '{"key":"value"}'] [--body '{"key":"value"}'] [--output-dir /path/to/dir]
 ```
 
+### Examples
+
+```bash
+# Search for med spas in Florida using wildcard keywords (OR logic)
+python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*med*spa*\",\"*medical*spa*\",\"*aesthet*\",\"*botox*\",\"*medspa*\"]","stateInclude":"FL","limit":"25"}'
+
+# Find auto shops in multiple states, exclude franchises
+python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*auto*repair*\",\"*body*shop*\",\"*mechanic*\",\"*tire*\",\"*oil*change*\"]","negativeKeywords":"[\"*franchise*\",\"*jiffy*\"]","stateInclude":"GA,FL,NC,SC,TN","limit":"50"}'
+
+# Search for recently updated dental leads in Texas
+python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\",\"*dentist*\",\"*orthodont*\",\"*oral*surg*\"]","stateInclude":"TX","lastUpdatedFrom":"2026-02-14"}'
+
+# Get account info
+python smb_api.py smbk_xxx GET /me
+
+# Export pet industry leads (files saved automatically to --output-dir)
+python smb_api.py smbk_xxx POST /leads/export --body '{"database":"other","filters":{"positiveKeywords":["*pet*groom*","*veterinar*","*dog*train*","*pet*board*"],"stateInclude":"CA,OR,WA"}}'
+
+# AI category suggestions for a fitness equipment distributor
+python smb_api.py smbk_xxx POST /ai/suggest-categories --body '{"companyName":"FitPro Supply","companyDescription":"Commercial fitness equipment distributor","productService":"Gym equipment, treadmills, weight systems"}'
+
+# Create a filter preset for bakery/catering leads
+python smb_api.py smbk_xxx POST /filter-presets --body '{"name":"NY Bakeries","filters":{"positiveKeywords":["*bakery*","*bake*shop*","*cater*","*pastry*"],"stateInclude":"NY"}}'
+
+# Delete a filter preset
+python smb_api.py smbk_xxx DELETE /filter-presets/42
+```
+
+The script outputs JSON to stdout and rate limit headers to stderr. For export requests, files are automatically saved with sanitized filenames.
+
 **Remember:**
-- JSON array parameters must be URL-encoded (e.g., `["plumbing"]` → `%5B%22plumbing%22%5D`)
+- Use multiple wildcard keyword variations to cast a wider net (e.g., `["*dental*", "*dentist*", "*orthodont*"]` not just `["dental"]`) — keywords are matched via OR logic
+- Use `*` for flexible pattern matching: `"*auto*repair*"` matches "auto body repair", "automotive repair shop", etc.
+- JSON array parameters should be serialized as strings inside the `--params` JSON
 - At least one positive filter is required for lead searches
 - Check which database the user needs before applying database-specific filters
 - Phone and email are masked for free-tier users
 - Present results in a clean, readable table format
-- When exporting, the response contains base64-encoded file data — decode and save as a file for the user
+
+## Security
+
+This skill addresses two specific agent execution risks: **shell injection** from constructing CLI commands with user input, and **arbitrary file writes** from unsanitized API-provided filenames.
+
+**Shell injection prevention:** The `smb_api.py` script uses Python's `requests` library for all HTTP calls. User-provided search terms, locations, and other inputs are passed as structured function arguments — never interpolated into shell command strings. This eliminates the shell injection vector that exists when agents construct `curl` commands from user input.
+
+**Path traversal prevention in exports:** The `/leads/export` endpoint returns base64-encoded files with an API-provided `fileName` field. A malicious or corrupted filename (e.g., `../../etc/passwd`) could write files to arbitrary locations. The script enforces three safeguards:
+1. **Basename extraction:** `os.path.basename()` strips all directory components — `../../etc/passwd` becomes `passwd`
+2. **Extension validation:** Only `.csv`, `.json`, and `.xlsx` extensions are allowed; anything else defaults to `.csv`
+3. **Scoped output directory:** Files are written only to the designated output directory (`/mnt/user-data/outputs/` by default), never to user-specified or API-specified paths
+
+**API key handling:** The key is passed as a CLI argument and sent only in the Authorization header. It is never logged, written to files, or included in error output.
 
 ## Error Handling
 

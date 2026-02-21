@@ -9,6 +9,7 @@ Place the `smb-sales-boost/` folder in your Claude skills directory:
 ```
 /mnt/skills/user/smb-sales-boost/
 ├── SKILL.md          # Skill instructions for Claude
+├── smb_api.py        # Reusable API client (handles all endpoints + safe exports)
 ├── openapi.json      # Full OpenAPI 3.1 specification (reference)
 └── README.md         # This file
 ```
@@ -23,8 +24,8 @@ Place the `smb-sales-boost/` folder in your Claude skills directory:
 
 SMB Sales Boost provides two separate lead databases:
 
-- **Home Improvement** (`home_improvement`) — Contractor/home improvement businesses with star ratings, review counts, review snippets, phone numbers, profile URLs, and categories
-- **Other** (`other`) — General newly registered businesses with registered URLs, URL registration dates, crawled URLs, descriptions, emails, phone numbers, and redirect status
+- **Home Improvement** (`home_improvement`) — Home improvement/contractor businesses with star ratings, review counts, review snippets, profile URLs, and categories
+- **Other** (`other`) — General newly registered businesses with registered URLs, crawled URLs, descriptions, primary email, primary phone, and redirect status
 
 Each has different filterable fields. Users can switch between databases (with a cooldown period).
 
@@ -32,18 +33,36 @@ Each has different filterable fields. Users can switch between databases (with a
 
 Once the skill is installed, users can interact with SMB Sales Boost in natural language:
 
-- **Search leads:** "Find new plumbing businesses in Texas"
+- **Search with wildcards:** "Find new dental practices in Texas" → searches `["*dental*", "*dentist*", "*orthodont*"]`
+- **Multi-keyword search:** "Search for med spas, wellness clinics, and aesthetics businesses in California"
 - **Filter by location:** "Show me businesses in Miami and Orlando"
-- **Filter by rating:** "Find contractors in California with at least 4 stars" (home_improvement only)
+- **Filter by rating:** "Find contractors with at least 4 stars in Phoenix" (home_improvement only)
 - **Find fresh leads:** "Show me leads updated in the last week" (uses the Last Updated date — the best indicator of lead freshness)
+- **Exclude terms:** "Find new bakeries in NYC but exclude pizza and franchise"
 - **Export data:** "Export these leads as a CSV"
-- **Manage filter presets:** "Save this search as 'Texas Plumbers'"
-- **Manage keyword lists:** "Create a keyword list for dental suppliers"
-- **Set up email schedules:** "Email me new plumbing leads in Texas every day"
-- **AI suggestions:** "What categories should I target for my dental supply company?"
+- **Manage filter presets:** "Save this search as 'FL Med Spas'"
+- **Manage keyword lists:** "Create a keyword list for pet industry leads"
+- **Set up email schedules:** "Email me new auto shop leads in Georgia every day"
+- **AI suggestions:** "What categories should I target for my fitness equipment business?"
 - **AI keywords:** "Generate keywords for my business"
 - **Manage blacklist:** "Exclude example.com from future exports"
 - **Account info:** "What subscription plan am I on?"
+
+## Wildcard Keywords
+
+The `positiveKeywords` and `negativeKeywords` parameters support `*` wildcard for flexible pattern matching:
+
+- `"*dental*"` — matches "dental clinic", "pediatric dentistry", "dental lab", etc.
+- `"*auto*repair*"` — matches "auto body repair", "automotive repair shop", etc.
+- `"*med*spa*"` — matches "med spa", "medical spa", "medspa services", etc.
+
+Use multiple variations for broader coverage — keywords are matched via OR logic:
+
+```json
+["*pet*groom*", "*dog*groom*", "*pet*salon*", "*mobile*groom*"]
+```
+
+Keywords without wildcards perform substring matching by default.
 
 ## Understanding "Last Updated"
 
@@ -54,25 +73,41 @@ The `lastUpdated` field is the primary way to identify the freshest, most action
 - Also includes newly added records
 - Many businesses launch a website before adding contact info, so the Last Updated date captures when that information first becomes available
 
-## Example Conversation
+## Example Conversations
 
 ```
-User: I sell HVAC equipment. Find me newly registered HVAC businesses 
-      in Florida and Georgia updated in the last 7 days.
+User: I sell commercial cleaning supplies. Find me newly registered 
+      cleaning businesses in Florida and Georgia updated in the last 7 days.
 
-Claude: [Calls GET /leads with positiveKeywords=["HVAC"], 
-         stateInclude=FL,GA, lastUpdatedFrom=2026-02-13]
+Claude: [Calls GET /leads with 
+         positiveKeywords=["*clean*service*","*janitorial*","*maid*service*","*pressure*wash*"],
+         stateInclude=FL,GA, lastUpdatedFrom=2026-02-14]
 
-I found 342 HVAC-related businesses in Florida and Georgia updated 
+I found 287 cleaning-related businesses in Florida and Georgia updated 
 in the last week. Here are the first 10:
 
-| Company Name          | City        | State | Phone        | Last Updated |
-|-----------------------|-------------|-------|--------------|--------------|
-| Cool Breeze HVAC LLC  | Miami       | FL    | 305-555-0123 | 2026-02-18   |
-| ...                   | ...         | ...   | ...          | ...          |
+| Company Name               | City         | State | Phone        | Last Updated |
+|----------------------------|--------------|-------|--------------|--------------|
+| Sparkle Clean Services LLC | Jacksonville | FL    | 904-555-0189 | 2026-02-19   |
+| Fresh Start Janitorial     | Atlanta      | GA    | 678-555-0234 | 2026-02-18   |
+| ...                        | ...          | ...   | ...          | ...          |
 
-Would you like me to export all 342 results, narrow the search, 
+Would you like me to export all 287 results, narrow the search,
 or save this as a filter preset?
+```
+
+```
+User: Now find me pet grooming and veterinary businesses in Texas,
+      but exclude anything related to boarding or kennels.
+
+Claude: [Calls GET /leads with 
+         positiveKeywords=["*pet*groom*","*veterinar*","*vet*clinic*","*animal*hospital*"],
+         negativeKeywords=["*boarding*","*kennel*","*pet*hotel*"],
+         stateInclude=TX]
+
+I found 156 pet grooming and veterinary businesses in Texas 
+(excluding boarding/kennel businesses). Here are the first 10:
+...
 ```
 
 ## Rate Limits
@@ -98,3 +133,16 @@ The skill covers all 30 SMB Sales Boost API endpoints:
 | Database Settings | `/settings/database`, `/settings/switch-database` | Get, Switch |
 | AI Features | `/ai/suggest-categories`, `/ai/generate-keywords` | Suggest categories, Generate keywords |
 | Export Blacklist | `/export-blacklist` | List, Add, Remove |
+
+## Security
+
+This skill addresses two specific agent execution risks identified by security scanning:
+
+**1. Shell injection prevention:** All API requests go through the included `smb_api.py` client using Python's `requests` library. User-provided search terms, locations, and other inputs are passed as structured function arguments — never interpolated into shell command strings. This eliminates the shell injection vector that exists when agents construct `curl` commands from user input.
+
+**2. Path traversal prevention in exports:** The `/leads/export` endpoint returns base64-encoded files with an API-provided `fileName` field. The script sanitizes all filenames before writing:
+- Strips directory components via `os.path.basename()` (e.g., `../../etc/passwd` → `passwd`)
+- Validates file extension against an allowlist (`.csv`, `.json`, `.xlsx` only)
+- Writes only to a designated safe output directory — never to API-specified or user-specified paths
+
+**3. API key protection:** Keys are passed as CLI arguments and sent only in the Authorization header — never logged, written to files, or included in error output.
