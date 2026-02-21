@@ -26,18 +26,25 @@ If the user hasn't provided their API key yet, ask them for it before making any
 
 ## Rate Limits
 
-- Exports: 1 export per 5 minutes
-- AI category suggestions: 5 requests per minute
-- AI keyword generation: 5 requests per minute
+- Exports: 1 per 5 minutes
+- Email schedule trigger: 1 per 5 minutes
+- AI category suggestions: 5 per minute
+- AI keyword generation: 5 per minute
+- AI auto-refine enable: 5 per minute
+- AI auto-refine disable: 60 per minute
+- AI auto-refine status: 60 per minute
+- AI keyword status: 60 per minute
 
 Rate limit headers are returned on every response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`. If rate limited, check the `Retry-After` header for seconds to wait.
 
 ## Two Database Types
 
-SMB Sales Boost has two separate databases:
+SMB Sales Boost has two separate databases with different contact information available:
 
-1. **`home_improvement`** — Home improvement/contractor businesses with fields like star ratings, review counts, review snippets, profile URLs, and categories
-2. **`other`** — General newly registered businesses with fields like registered URL, crawled URL, short/long descriptions, primary email, primary phone, and redirect status
+1. **`home_improvement`** — Home improvement/contractor businesses with **phone numbers**, star ratings, review counts, review snippets, profile URLs, and categories
+2. **`other`** — General newly registered businesses with **phone numbers and email addresses**, registered URLs, crawled URLs, short/long descriptions, and redirect status
+
+The Home Improvement database provides phone numbers as the primary contact method. The Other database provides both phone numbers and email addresses, making it ideal for cold email and multi-channel outreach campaigns.
 
 Some filter parameters only work with one database type. The user's account has a default database setting. Always check which database the user wants to query.
 
@@ -154,6 +161,7 @@ Rate limited: 1 export per 5 minutes, max 10,000 leads per export.
 - `POST /email-schedules` — Create (requires `name`, `filterPresetId`, `intervalValue`, `intervalUnit`)
 - `PATCH /email-schedules/{id}` — Update (supports `isActive` toggle)
 - `DELETE /email-schedules/{id}` — Delete
+- `POST /email-schedules/{id}/trigger` — Manually trigger an active schedule to send immediately (rate limited: 1 per 5 minutes)
 
 ### 6. Export Formats — `/export-formats`
 
@@ -177,6 +185,14 @@ Required: `companyName`, `companyDescription`, `productService`
 Optional: `companyWebsite`, `smbType`, `excludeCategories`
 
 **`POST /ai/generate-keywords`** — Trigger async keyword generation based on profile and target categories.
+
+**`GET /ai/keyword-status`** — Check the status of keyword generation jobs. Use this to poll for completion after triggering keyword generation.
+
+**AI Auto-Refine** — Automatically refine keyword lists using AI:
+
+- `POST /ai/auto-refine/enable` — Enable auto-refine for a keyword list (requires `listId`)
+- `POST /ai/auto-refine/disable` — Disable auto-refine for a keyword list (requires `listId`)
+- `GET /ai/auto-refine/status` — Check auto-refine status (optional `listId` query param to filter by specific list)
 
 ### 9. Export Blacklist — `/export-blacklist`
 
@@ -212,6 +228,9 @@ When users make natural language requests, translate them into API calls. Use mu
 | "Show my recent exports" | `GET /export-history` |
 | "What plan am I on?" | `GET /me` |
 | "Exclude these domains from exports" | `POST /export-blacklist` |
+| "Enable auto-refine on my keyword list" | `POST /ai/auto-refine/enable` with `listId` |
+| "Check on my keyword generation" | `GET /ai/keyword-status` |
+| "Send my scheduled email now" | `POST /email-schedules/{id}/trigger` |
 
 ## Building API Requests
 
@@ -247,6 +266,18 @@ python smb_api.py smbk_xxx POST /ai/suggest-categories --body '{"companyName":"F
 # Create a filter preset for bakery/catering leads
 python smb_api.py smbk_xxx POST /filter-presets --body '{"name":"NY Bakeries","filters":{"positiveKeywords":["*bakery*","*bake*shop*","*cater*","*pastry*"],"stateInclude":"NY"}}'
 
+# Enable AI auto-refine on a keyword list
+python smb_api.py smbk_xxx POST /ai/auto-refine/enable --body '{"listId":42}'
+
+# Check auto-refine status for a specific list
+python smb_api.py smbk_xxx GET /ai/auto-refine/status --params '{"listId":"42"}'
+
+# Check keyword generation job status
+python smb_api.py smbk_xxx GET /ai/keyword-status
+
+# Manually trigger an email schedule
+python smb_api.py smbk_xxx POST /email-schedules/15/trigger
+
 # Delete a filter preset
 python smb_api.py smbk_xxx DELETE /filter-presets/42
 ```
@@ -259,6 +290,7 @@ The script outputs JSON to stdout and rate limit headers to stderr. For export r
 - JSON array parameters should be serialized as strings inside the `--params` JSON
 - At least one positive filter is required for lead searches
 - Check which database the user needs before applying database-specific filters
+- Home Improvement database provides phone numbers; Other database provides phone numbers and email addresses
 - Phone and email are masked for free-tier users
 - Present results in a clean, readable table format
 

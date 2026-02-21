@@ -3,7 +3,7 @@
   "info": {
     "title": "SMB Sales Boost API",
     "version": "1.0.0",
-    "description": "REST API for SMB Sales Boost — a B2B lead generation platform providing access to newly registered small and medium businesses across the United States. Search, filter, and export leads with comprehensive company data including contact information, location, and AI-enriched categories. API access requires a Pro, Platinum, Enterprise, or Agency subscription plan.",
+    "description": "REST API for SMB Sales Boost — a B2B lead generation platform providing access to newly registered small and medium businesses across the United States. Search, filter, and export leads with comprehensive company data including contact information, location, and AI-enriched categories. API access requires a Pro, Platinum, Enterprise, or Agency subscription plan. A Model Context Protocol (MCP) server is also available at https://smbsalesboost.com/mcp for AI assistant integration — see https://smbsalesboost.com/docs/api/mcp-server for details.",
     "contact": {
       "name": "SMB Sales Boost Support",
       "email": "support@smbsalesboost.com",
@@ -867,7 +867,6 @@
                   "companyDescription": { "type": "string", "description": "What your company does", "example": "We provide accounting software and bookkeeping services to small businesses" },
                   "productService": { "type": "string", "description": "Specific product or service you sell", "example": "Cloud accounting software, payroll services, tax preparation" },
                   "companyWebsite": { "type": "string", "description": "Your company website URL (optional, used for AI analysis)", "example": "https://acmebusinesssolutions.com" },
-                  "smbType": { "type": "string", "enum": ["home_improvement", "other"], "description": "Which database to suggest categories from" },
                   "excludeCategories": { "type": "array", "items": { "type": "string" }, "description": "Categories to exclude from suggestions" }
                 }
               }
@@ -1014,6 +1013,235 @@
           "200": { "$ref": "#/components/responses/DeleteSuccess" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/ai/auto-refine/status": {
+      "get": {
+        "tags": ["AI Features"],
+        "operationId": "getAutoRefineStatus",
+        "summary": "Get auto-refine status",
+        "description": "Get auto-refine status for keyword lists. Optionally filter by a specific list ID. Rate limited to 60 requests per minute.",
+        "parameters": [
+          { "name": "listId", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Filter by specific keyword list ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Auto-refine status retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "listId": { "type": "integer" },
+                              "name": { "type": "string" },
+                              "autoRefineEnabled": { "type": "boolean" },
+                              "refinementStatus": { "type": "string" },
+                              "currentRound": { "type": "integer" },
+                              "maxRounds": { "type": "integer" }
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "listId": { "type": "integer" },
+                            "name": { "type": "string" },
+                            "autoRefineEnabled": { "type": "boolean" },
+                            "refinementStatus": { "type": "string" },
+                            "currentRound": { "type": "integer" },
+                            "maxRounds": { "type": "integer" }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/ai/auto-refine/enable": {
+      "post": {
+        "tags": ["AI Features"],
+        "operationId": "enableAutoRefine",
+        "summary": "Enable AI auto-refine",
+        "description": "Enable AI auto-refine for a keyword list. Rate limited to 5 requests per minute.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["listId"],
+                "properties": {
+                  "listId": { "type": "integer", "description": "Keyword list ID to enable auto-refine for" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Auto-refine enabled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "message": { "type": "string" },
+                        "listId": { "type": "integer" },
+                        "autoRefineEnabled": { "type": "boolean" },
+                        "refinementStatus": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/ai/auto-refine/disable": {
+      "post": {
+        "tags": ["AI Features"],
+        "operationId": "disableAutoRefine",
+        "summary": "Disable AI auto-refine",
+        "description": "Disable AI auto-refine for a keyword list. Rate limited to 60 requests per minute.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["listId"],
+                "properties": {
+                  "listId": { "type": "integer", "description": "Keyword list ID to disable auto-refine for" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Auto-refine disabled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "message": { "type": "string" },
+                        "listId": { "type": "integer" },
+                        "autoRefineEnabled": { "type": "boolean" },
+                        "refinementStatus": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/ai/keyword-status": {
+      "get": {
+        "tags": ["AI Features"],
+        "operationId": "getKeywordStatus",
+        "summary": "Check keyword generation job status",
+        "description": "Check the status of keyword generation jobs. Rate limited to 60 requests per minute.",
+        "responses": {
+          "200": {
+            "description": "Keyword generation status retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "hasJobs": { "type": "boolean" },
+                        "jobs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": { "type": "integer" },
+                              "status": { "type": "string" },
+                              "refinementStatus": { "type": "string" },
+                              "currentRound": { "type": "integer" },
+                              "maxRounds": { "type": "integer" },
+                              "createdAt": { "type": "string", "format": "date-time" },
+                              "lastRefinedAt": { "type": "string", "format": "date-time", "nullable": true }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/email-schedules/{id}/trigger": {
+      "post": {
+        "tags": ["Email Schedules"],
+        "operationId": "triggerEmailSchedule",
+        "summary": "Manually trigger an email schedule",
+        "description": "Manually trigger an active email schedule to send immediately. Rate limited to 1 request per 5 minutes.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email schedule triggered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "message": { "type": "string" },
+                        "scheduleId": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
     }

@@ -22,12 +22,14 @@ Place the `smb-sales-boost/` folder in your Claude skills directory:
 
 ## Two Databases
 
-SMB Sales Boost provides two separate lead databases:
+SMB Sales Boost provides two separate lead databases with different contact information:
 
-- **Home Improvement** (`home_improvement`) — Home improvement/contractor businesses with star ratings, review counts, review snippets, profile URLs, and categories
-- **Other** (`other`) — General newly registered businesses with registered URLs, crawled URLs, descriptions, primary email, primary phone, and redirect status
+- **Home Improvement** (`home_improvement`) — Home improvement/contractor businesses with **phone numbers**, star ratings, review counts, review snippets, profile URLs, and categories
+- **Other** (`other`) — General newly registered businesses with **phone numbers and email addresses**, registered URLs, crawled URLs, descriptions, and redirect status
 
-Each has different filterable fields. Users can switch between databases (with a cooldown period).
+The Home Improvement database provides phone numbers as the primary contact method. The Other database provides both phone numbers and email addresses, making it ideal for cold email and multi-channel outreach campaigns.
+
+Each database has different filterable fields. Users can switch between databases (with a cooldown period).
 
 ## What Users Can Do
 
@@ -42,9 +44,12 @@ Once the skill is installed, users can interact with SMB Sales Boost in natural 
 - **Export data:** "Export these leads as a CSV"
 - **Manage filter presets:** "Save this search as 'FL Med Spas'"
 - **Manage keyword lists:** "Create a keyword list for pet industry leads"
+- **AI auto-refine:** "Enable auto-refine on my keyword list" — let AI continuously improve keyword lists
 - **Set up email schedules:** "Email me new auto shop leads in Georgia every day"
+- **Trigger email manually:** "Send my scheduled email now"
 - **AI suggestions:** "What categories should I target for my fitness equipment business?"
 - **AI keywords:** "Generate keywords for my business"
+- **Check AI job status:** "Check on my keyword generation"
 - **Manage blacklist:** "Exclude example.com from future exports"
 - **Account info:** "What subscription plan am I on?"
 
@@ -86,11 +91,11 @@ Claude: [Calls GET /leads with
 I found 287 cleaning-related businesses in Florida and Georgia updated 
 in the last week. Here are the first 10:
 
-| Company Name               | City         | State | Phone        | Last Updated |
-|----------------------------|--------------|-------|--------------|--------------|
-| Sparkle Clean Services LLC | Jacksonville | FL    | 904-555-0189 | 2026-02-19   |
-| Fresh Start Janitorial     | Atlanta      | GA    | 678-555-0234 | 2026-02-18   |
-| ...                        | ...          | ...   | ...          | ...          |
+| Company Name               | City         | State | Phone        | Email                    | Last Updated |
+|----------------------------|--------------|-------|--------------|--------------------------|--------------|
+| Sparkle Clean Services LLC | Jacksonville | FL    | 904-555-0189 | info@sparkleclean.com    | 2026-02-19   |
+| Fresh Start Janitorial     | Atlanta      | GA    | 678-555-0234 | contact@freshstartjn.com | 2026-02-18   |
+| ...                        | ...          | ...   | ...          | ...                      | ...          |
 
 Would you like me to export all 287 results, narrow the search,
 or save this as a filter preset?
@@ -110,15 +115,30 @@ I found 156 pet grooming and veterinary businesses in Texas
 ...
 ```
 
+```
+User: Enable auto-refine on my "TX Pet Services" keyword list.
+
+Claude: [Calls GET /keyword-lists to find the list ID, then 
+         POST /ai/auto-refine/enable with listId=42]
+
+Auto-refine is now enabled on your "TX Pet Services" keyword list (ID 42). 
+The AI will continuously refine your keywords to improve lead matching. 
+You can check the status anytime or disable it later.
+```
+
 ## Rate Limits
 
 - Exports: 1 per 5 minutes, max 10,000 leads per export
-- AI category suggestions: 5 requests per minute
-- AI keyword generation: 5 requests per minute
+- Email schedule trigger: 1 per 5 minutes
+- AI category suggestions: 5 per minute
+- AI keyword generation: 5 per minute
+- AI auto-refine enable: 5 per minute
+- AI auto-refine disable/status: 60 per minute
+- AI keyword status: 60 per minute
 
 ## API Coverage
 
-The skill covers all 30 SMB Sales Boost API endpoints:
+The skill covers all 35 SMB Sales Boost API endpoints:
 
 | Feature | Endpoints | Operations |
 |---------|-----------|------------|
@@ -127,11 +147,13 @@ The skill covers all 30 SMB Sales Boost API endpoints:
 | Lead Export | `/leads/export` | Export to CSV/JSON/XLSX |
 | Filter Presets | `/filter-presets` | List, Create, Delete |
 | Keyword Lists | `/keyword-lists` | List, Create, Update, Delete |
-| Email Schedules | `/email-schedules` | List, Create, Update, Delete |
+| Email Schedules | `/email-schedules` | List, Create, Update, Delete, Trigger |
 | Export Formats | `/export-formats` | List, Create, Get, Update, Delete, Set Default |
 | Export History | `/export-history` | List, Download |
 | Database Settings | `/settings/database`, `/settings/switch-database` | Get, Switch |
-| AI Features | `/ai/suggest-categories`, `/ai/generate-keywords` | Suggest categories, Generate keywords |
+| AI Categories | `/ai/suggest-categories` | Suggest categories |
+| AI Keywords | `/ai/generate-keywords`, `/ai/keyword-status` | Generate, Check status |
+| AI Auto-Refine | `/ai/auto-refine/enable`, `/ai/auto-refine/disable`, `/ai/auto-refine/status` | Enable, Disable, Check status |
 | Export Blacklist | `/export-blacklist` | List, Add, Remove |
 
 ## Security

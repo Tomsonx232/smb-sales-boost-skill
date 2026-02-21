@@ -11,6 +11,10 @@ Examples:
   python smb_api.py smbk_xxx GET /me
   python smb_api.py smbk_xxx POST /leads/export --body '{"database":"other","filters":{"positiveKeywords":["*med*spa*","*aesthet*","*botox*"],"stateInclude":"FL"}}'
   python smb_api.py smbk_xxx POST /ai/suggest-categories --body '{"companyName":"FitPro Supply","companyDescription":"Commercial fitness equipment","productService":"Gym equipment, treadmills"}'
+  python smb_api.py smbk_xxx POST /ai/auto-refine/enable --body '{"listId":42}'
+  python smb_api.py smbk_xxx GET /ai/auto-refine/status --params '{"listId":"42"}'
+  python smb_api.py smbk_xxx GET /ai/keyword-status
+  python smb_api.py smbk_xxx POST /email-schedules/15/trigger
   python smb_api.py smbk_xxx POST /filter-presets --body '{"name":"NY Bakeries","filters":{"positiveKeywords":["*bakery*","*cater*","*pastry*"],"stateInclude":"NY"}}'
   python smb_api.py smbk_xxx DELETE /filter-presets/42
 """
