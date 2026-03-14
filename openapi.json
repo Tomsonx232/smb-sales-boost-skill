@@ -3,7 +3,7 @@
   "info": {
     "title": "SMB Sales Boost API",
     "version": "1.0.0",
-    "description": "REST API for SMB Sales Boost — a B2B lead generation platform providing access to newly registered small and medium businesses across the United States. Search, filter, and export leads with comprehensive company data including contact information, location, and AI-enriched categories. API access requires a Pro, Platinum, Enterprise, or Agency subscription plan. A Model Context Protocol (MCP) server is also available at https://smbsalesboost.com/mcp for AI assistant integration — see https://smbsalesboost.com/docs/api/mcp-server for details.",
+    "description": "REST API for SMB Sales Boost — a B2B lead generation platform providing access to newly registered small and medium businesses across the United States. Search, filter, and export leads with comprehensive company data including contact information, location, and AI-enriched categories. API access requires a Starter, Growth, Scale, Platinum, or Enterprise subscription plan. New users can purchase a subscription entirely via API using the Programmatic Purchase endpoints (no web signup required). A Model Context Protocol (MCP) server is also available at https://smbsalesboost.com/mcp for AI assistant integration — see https://smbsalesboost.com/docs/api/mcp-server for details.",
     "contact": {
       "name": "SMB Sales Boost Support",
       "email": "support@smbsalesboost.com",
@@ -26,6 +26,7 @@
     }
   ],
   "tags": [
+    { "name": "Programmatic Purchase", "description": "Purchase a subscription and claim your API key entirely via API (no web signup required)" },
     { "name": "User Profile", "description": "View and update your account profile" },
     { "name": "Leads", "description": "Search, filter, and export leads from the database" },
     { "name": "Filter Presets", "description": "Save and manage reusable filter configurations" },
@@ -35,9 +36,135 @@
     { "name": "Export History", "description": "View and re-download past exports" },
     { "name": "Account Settings", "description": "Database switching and account configuration" },
     { "name": "AI Features", "description": "AI-powered category suggestions and keyword generation" },
+    { "name": "Credits & Subscription", "description": "Purchase additional credits and manage your subscription" },
     { "name": "Export Blacklist", "description": "Manage leads excluded from future exports" }
   ],
   "paths": {
+    "/purchase": {
+      "post": {
+        "tags": ["Programmatic Purchase"],
+        "operationId": "createPurchase",
+        "summary": "Start a subscription purchase",
+        "description": "Create a Stripe Checkout session for purchasing a subscription entirely via API. No web signup or onboarding required. Returns a checkout URL and a claim token. After payment is completed at the checkout URL, use POST /api/v1/claim-key with the claim token to retrieve your API key. Rate limited to 5 requests per hour per IP.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "plan"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "description": "Customer email address", "example": "user@example.com" },
+                  "plan": { "type": "string", "enum": ["starter", "growth", "scale", "platinum", "enterprise"], "description": "Subscription plan to purchase", "example": "growth" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Purchase session created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "checkoutUrl": { "type": "string", "format": "uri", "description": "Stripe Checkout URL — redirect or open this to complete payment" },
+                        "claimToken": { "type": "string", "description": "Claim token (claim_ prefix + 32 random bytes). Use with POST /api/v1/claim-key after payment." },
+                        "expiresAt": { "type": "string", "format": "date-time", "description": "When this purchase session expires (24 hours from creation)" },
+                        "plan": { "type": "string", "description": "The plan being purchased" },
+                        "message": { "type": "string", "description": "Instructions for next steps" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "description": "Email is forbidden from purchasing" },
+          "409": { "description": "An active subscription already exists for this email" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "Payment processing is not configured" }
+        }
+      }
+    },
+    "/claim-key": {
+      "post": {
+        "tags": ["Programmatic Purchase"],
+        "operationId": "claimApiKey",
+        "summary": "Claim your API key after payment",
+        "description": "After completing payment at the Stripe Checkout URL, use this endpoint with your email and claim token to retrieve your API key. The API key is returned once and cannot be retrieved again. If payment is still pending, returns status 'pending' — poll every 5-10 seconds. Rate limited to 30 requests per hour per IP.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "claimToken"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "description": "Email used during purchase", "example": "user@example.com" },
+                  "claimToken": { "type": "string", "description": "Claim token received from POST /api/v1/purchase", "example": "claim_abc123..." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API key claimed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "apiKey": { "type": "string", "description": "Your API key (smbk_ prefix). Store securely — shown only once." },
+                        "plan": { "type": "string", "description": "Subscription plan" },
+                        "email": { "type": "string", "description": "Account email" },
+                        "message": { "type": "string", "description": "Account setup recommendations" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Payment not yet completed — poll again in 5-10 seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": { "type": "string", "enum": ["pending"] },
+                        "message": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "description": "Email does not match the purchase record" },
+          "404": { "description": "Invalid claim token" },
+          "409": { "description": "API key has already been claimed" },
+          "410": { "description": "Purchase session has expired" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
     "/me": {
       "get": {
         "tags": ["User Profile"],
@@ -147,9 +274,20 @@
           { "name": "emailPrimaryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of primary email exclude terms (other only)" },
           { "name": "phonePrimaryInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of primary phone include terms (other only)" },
           { "name": "phonePrimaryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of primary phone exclude terms (other only)" },
+          { "name": "emailSecondaryInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of secondary email include terms (other only)" },
+          { "name": "emailSecondaryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of secondary email exclude terms (other only)" },
+          { "name": "phoneSecondaryInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of secondary phone include terms (other only)" },
+          { "name": "phoneSecondaryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of secondary phone exclude terms (other only)" },
           { "name": "redirectFilter", "in": "query", "schema": { "type": "string", "enum": ["yes", "no"] }, "description": "Filter by redirect status (other only)" },
-          { "name": "lastUpdatedFrom", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter leads by Last Updated date (after this date). For Home Improvement leads, Last Updated means a new phone number was detected. For Other leads, it means the primary phone number and/or primary email address was updated. Also includes newly added records. This is the primary way to identify the freshest leads — many businesses launch a website before adding contact info, so Last Updated captures when that information first becomes available." },
+          { "name": "updateReasonFilter", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated update reasons to filter by (e.g., Newly Added,Phone Primary)" },
+          { "name": "websiteSchemaFilter", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated website schema types to filter by (other only, e.g., LocalBusiness,Organization). Use GET /leads/other/schema-types for available values." },
+          { "name": "lastUpdatedFrom", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter leads by Last Updated date (after this date). For Home Improvement leads, Last Updated means a new phone number was detected. For Other leads, it means any of the 5 contact/address fields changed: primary phone, secondary phone, primary email, secondary email, or full address. Also includes newly added records. This is the primary way to identify the freshest leads — many businesses launch a website before adding contact info, so Last Updated captures when that information first becomes available." },
           { "name": "lastUpdatedTo", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter leads by Last Updated date (before this date)." },
+          { "name": "timeScrapedFrom", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter leads scraped after this date (ISO 8601 or relative format e.g. rel:30d)" },
+          { "name": "timeScrapedTo", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter leads scraped before this date (ISO 8601)" },
+          { "name": "registrationDateFrom", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter by domain registration date start (other only). Accepts ISO or relative format (e.g. rel:6m)" },
+          { "name": "registrationDateTo", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter by domain registration date end (other only, ISO 8601)" },
+          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Full-text search across all fields" },
           { "name": "countryInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of countries to include" },
           { "name": "countryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of countries to exclude" }
         ],
@@ -184,12 +322,35 @@
         }
       }
     },
+    "/leads/other/schema-types": {
+      "get": {
+        "tags": ["Leads"],
+        "operationId": "getSchemaTypes",
+        "summary": "List available website schema types",
+        "description": "Returns a sorted list of all distinct website schema types found in the Other leads database. Use these values with the websiteSchemaFilter parameter on GET /leads.",
+        "responses": {
+          "200": {
+            "description": "Array of schema type strings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "example": ["AutoDealer", "Dentist", "HomeAndConstructionBusiness", "LegalService", "LocalBusiness", "MedicalBusiness", "Organization", "Restaurant"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
     "/leads/export": {
       "post": {
         "tags": ["Leads"],
         "operationId": "exportLeads",
         "summary": "Export leads to CSV/JSON/XLSX",
-        "description": "Export leads matching your filters as downloadable files. Supports CSV, JSON, and XLSX formats. Free tier users have limited exports; Pro+ users get unlimited exports up to 10,000 leads per export. Rate limited to 1 export per 5 minutes.",
+        "description": "Export leads matching your filters as downloadable files. Supports CSV, JSON, and XLSX formats. Up to 10,000 leads per export. For credit-plan users (Starter/Growth/Scale), each net-new lead exported deducts 1 credit. Rate limited to 1 export per 5 minutes.",
         "requestBody": {
           "required": true,
           "content": {
@@ -210,6 +371,21 @@
                   "formatId": {
                     "type": "integer",
                     "description": "Export format template ID. Uses default format if not specified."
+                  },
+                  "maxLeads": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Maximum number of leads to include in this export. Overflow leads are stored in the lead reservoir for the next export. If omitted, all matching leads are exported."
+                  },
+                  "maxResults": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Maximum total leads to return (both new and previously-exported). New leads (credit-consuming) are prioritized first, then previously-exported leads fill remaining slots. If omitted, all matching leads are included."
+                  },
+                  "maxCredits": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Maximum number of credits to spend on this export. Only new (credit-consuming) leads count toward this cap. Previously-exported leads are included for free up to the maxResults limit. Set to 0 to only receive previously-exported leads. If omitted, no credit cap is applied (standard credit deduction)."
                   }
                 }
               }
@@ -241,7 +417,13 @@
                         },
                         "leadCount": { "type": "integer" },
                         "exportId": { "type": "integer" },
-                        "databaseType": { "type": "string" }
+                        "databaseType": { "type": "string" },
+                        "creditsUsed": { "type": "integer", "description": "Number of credits deducted for net-new leads (credit-plan users only)" },
+                        "creditsRemaining": { "type": "integer", "description": "Remaining credit balance after this export (credit-plan users only)" },
+                        "maxLeads": { "type": "integer", "description": "Echo of maxLeads parameter (only present when maxLeads was specified)" },
+                        "overflowCount": { "type": "integer", "description": "Number of leads stored in the reservoir due to maxLeads cap (only present when maxLeads is specified)" },
+                        "maxResults": { "type": "integer", "description": "Echo of maxResults parameter (only present when maxResults was specified)" },
+                        "maxCredits": { "type": "integer", "description": "Echo of maxCredits parameter (only present when maxCredits was specified)" }
                       }
                     }
                   }
@@ -251,6 +433,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "description": "Insufficient credits to complete this export (credit-plan users only)" },
           "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
@@ -904,7 +1087,7 @@
         "tags": ["AI Features"],
         "operationId": "generateKeywords",
         "summary": "AI keyword generation",
-        "description": "Trigger AI-powered keyword generation based on your company profile and target categories. Keywords are generated asynchronously. Rate limited to 5 requests per minute.",
+        "description": "Trigger AI-powered keyword generation based on your company profile and target categories (up to 3 per list). Keywords are generated as wildcard patterns and saved to keyword lists with auto-refine enabled by default. Runs asynchronously — use /ai/keyword-status to check progress. Rate limited to 5 requests per minute.",
         "responses": {
           "200": {
             "description": "Keyword generation started",
@@ -926,6 +1109,150 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/purchase-credits": {
+      "post": {
+        "tags": ["Credits & Subscription"],
+        "operationId": "purchaseCredits",
+        "summary": "Purchase additional permanent credits",
+        "description": "Purchase permanent credits using your saved payment method (Stripe off-session charge). Provide either creditCount (minimum 100) or dollarAmount (minimum $1). When using dollarAmount, credits are calculated from your plan's overage rate and you are charged only for whole credits. Pricing: Starter 10¢, Growth 8¢, Scale 5¢, Platinum 3¢, Enterprise 2¢ per credit.",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "creditCount": { "type": "integer", "minimum": 100, "description": "Number of credits to purchase (minimum 100). Mutually exclusive with dollarAmount.", "example": 500 },
+                  "dollarAmount": { "type": "number", "minimum": 1, "description": "Dollar amount to spend on credits (minimum $1). Credits are calculated from your plan rate and you are charged for whole credits only. Mutually exclusive with creditCount.", "example": 50 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credits purchased successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "success": { "type": "boolean" },
+                        "creditsAdded": { "type": "integer" },
+                        "totalPermanentCredits": { "type": "integer" },
+                        "amountCharged": { "type": "string" },
+                        "amountChargedCents": { "type": "integer" },
+                        "pricePerCredit": { "type": "string" },
+                        "stripePaymentIntentId": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Not on an active credit plan" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/subscription/cancel": {
+      "post": {
+        "tags": ["Credits & Subscription"],
+        "operationId": "cancelSubscription",
+        "summary": "Cancel subscription",
+        "description": "Cancel your subscription at the end of the current billing period. Your access continues until the period ends.",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Subscription cancellation scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "message": { "type": "string" },
+                        "cancelAtPeriodEnd": { "type": "boolean" },
+                        "currentPeriodEnd": { "type": "integer" },
+                        "status": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "No active subscription found" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/subscription/change-plan": {
+      "post": {
+        "tags": ["Credits & Subscription"],
+        "operationId": "changePlan",
+        "summary": "Change subscription plan",
+        "description": "Upgrade or downgrade your subscription plan. Available target plans: starter, growth, scale. On upgrade, unused monthly credits are automatically converted to permanent credits (capped at current plan's standard allocation). Card on file is charged the prorated difference for upgrades; downgrades take effect at renewal.",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["targetPlan"],
+                "properties": {
+                  "targetPlan": {
+                    "type": "string",
+                    "enum": ["starter", "growth", "scale"],
+                    "description": "The plan to switch to"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plan changed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "message": { "type": "string" },
+                        "changeType": { "type": "string", "enum": ["upgrade", "downgrade"] },
+                        "previousPlan": { "type": "string" },
+                        "newPlan": { "type": "string" },
+                        "newMonthlyCredits": { "type": "integer", "description": "Only present on upgrades" },
+                        "permanentCreditsAdded": { "type": "integer", "description": "Only present on upgrades" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "No active subscription found" },
           "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
@@ -1021,7 +1348,7 @@
         "tags": ["AI Features"],
         "operationId": "getAutoRefineStatus",
         "summary": "Get auto-refine status",
-        "description": "Get auto-refine status for keyword lists. Optionally filter by a specific list ID. Rate limited to 60 requests per minute.",
+        "description": "Get auto-refine status for keyword lists. Optionally filter by a specific list ID. Returns refinement progress, quality scores per round, timing, and paired list information. The auto-refine system uses a single-pass 4-phase process: Phase 1 validates each positive keyword individually (50% threshold, up to 2 variation attempts), Phase 1B discovers up to 15 new positives (5-added target), Phase 2 checks negative keyword collateral damage (40% threshold), Phase 2B discovers up to 5 new negatives. High-volume keywords use multi-sample scoring (3x50 leads, median). Final quality score (1-10) determines if retry pass needed.",
         "parameters": [
           { "name": "listId", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Filter by specific keyword list ID" }
         ],
@@ -1037,28 +1364,12 @@
                       "oneOf": [
                         {
                           "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "listId": { "type": "integer" },
-                              "name": { "type": "string" },
-                              "autoRefineEnabled": { "type": "boolean" },
-                              "refinementStatus": { "type": "string" },
-                              "currentRound": { "type": "integer" },
-                              "maxRounds": { "type": "integer" }
-                            }
-                          }
+                          "description": "Array of all keyword lists with refine info (when no listId specified)",
+                          "items": { "$ref": "#/components/schemas/AutoRefineStatus" }
                         },
                         {
-                          "type": "object",
-                          "properties": {
-                            "listId": { "type": "integer" },
-                            "name": { "type": "string" },
-                            "autoRefineEnabled": { "type": "boolean" },
-                            "refinementStatus": { "type": "string" },
-                            "currentRound": { "type": "integer" },
-                            "maxRounds": { "type": "integer" }
-                          }
+                          "$ref": "#/components/schemas/AutoRefineStatus",
+                          "description": "Single list refine info (when listId specified)"
                         }
                       ]
                     }
@@ -1067,7 +1378,8 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Keyword list not found (when listId specified)" }
         }
       }
     },
@@ -1076,7 +1388,7 @@
         "tags": ["AI Features"],
         "operationId": "enableAutoRefine",
         "summary": "Enable AI auto-refine",
-        "description": "Enable AI auto-refine for a keyword list. Rate limited to 5 requests per minute.",
+        "description": "Enable AI auto-refine for a keyword list and start the single-pass 4-phase optimization process. Phase 1 validates each positive keyword individually (50% applicability threshold) with up to 2 variation attempts (3 candidates each). Phase 1B discovers up to 15 new positive keywords in a single AI call, testing all concurrently (5-added target based on incremental lead contribution). Phase 2 checks each negative keyword for collateral damage (40% threshold) with the same variation strategy. Phase 2B samples ~80 leads and discovers up to 5 new negative keywords. High-volume keywords use multi-sample scoring (3x50 leads, median). Final quality score (1-10, median of 3) determines if retry needed (score <=5). Auto-refine turns off when complete. Each list uses its sourceCategories (max 3) for accurate AI scoring. Rate limited to 5 requests per minute.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1124,7 +1436,7 @@
         "tags": ["AI Features"],
         "operationId": "disableAutoRefine",
         "summary": "Disable AI auto-refine",
-        "description": "Disable AI auto-refine for a keyword list. Rate limited to 60 requests per minute.",
+        "description": "Disable AI auto-refine for a keyword list. Pauses any in-progress refinement and stops future optimization runs. Rate limited to 60 requests per minute.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1251,10 +1563,36 @@
       "BearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "API key with 'smbk_' prefix. Generate from Dashboard > API tab. Available on Pro, Platinum, Enterprise, and Agency plans."
+        "description": "API key with 'smbk_' prefix. Generate from Dashboard > API tab. Available on Starter, Growth, Scale, Platinum, and Enterprise plans."
       }
     },
     "schemas": {
+      "AutoRefineStatus": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "integer", "description": "Keyword list ID" },
+          "name": { "type": "string", "description": "Keyword list name" },
+          "type": { "type": "string", "enum": ["positive", "negative"], "description": "Keyword list type" },
+          "autoRefineEnabled": { "type": "boolean", "description": "Whether auto-refine is enabled" },
+          "refinementStatus": { "type": "string", "enum": ["running", "paused", "completed", "failed"], "nullable": true, "description": "Current refinement status" },
+          "currentRound": { "type": "integer", "description": "Current refinement round (0 if not started)" },
+          "maxRounds": { "type": "integer", "description": "Maximum number of refinement rounds (default 10)" },
+          "scoresPerRound": {
+            "type": "array",
+            "description": "Quality scores from each completed round. Uses multi-sample scoring (3×50 leads, median) for high-volume keywords.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "round": { "type": "integer", "description": "Round number" },
+                "score": { "type": "number", "description": "Quality score (1-10)" },
+                "reasoning": { "type": "string", "description": "Explanation of the score, e.g. 'Median of [6, 7, 5]'" }
+              }
+            }
+          },
+          "lastRefinedAt": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO timestamp of last refinement run" },
+          "pairedListId": { "type": "integer", "nullable": true, "description": "ID of the paired positive/negative keyword list (refined together)" }
+        }
+      },
       "UserProfile": {
         "type": "object",
         "properties": {
@@ -1265,7 +1603,7 @@
           "companyName": { "type": "string", "nullable": true },
           "companyWebsite": { "type": "string", "nullable": true },
           "smbType": { "type": "string", "enum": ["home_improvement", "other"] },
-          "subscriptionPlan": { "type": "string", "enum": ["free", "pro", "platinum", "enterprise", "agency"] },
+          "subscriptionPlan": { "type": "string", "enum": ["free", "starter", "growth", "scale", "platinum", "enterprise"] },
           "subscriptionStatus": { "type": "string", "nullable": true },
           "isSubscribed": { "type": "boolean" },
           "freeLeadsUsed": { "type": "integer" },
@@ -1297,7 +1635,7 @@
           "phone": { "type": "string", "nullable": true, "description": "Primary phone (masked for free users)" },
           "email": { "type": "string", "nullable": true, "description": "Primary email (masked for free users)" },
           "categories": { "type": "string", "nullable": true, "description": "Business categories" },
-          "lastUpdated": { "type": "string", "nullable": true, "description": "Date the lead record was last updated. For Home Improvement leads, this means a new phone number was detected. For Other leads, this means the primary phone number and/or primary email address was updated. Also includes newly added records. This is the primary way to identify the freshest, most actionable leads — many businesses launch a website before adding their phone number or email, so the Last Updated date captures when that contact information first becomes available." }
+          "lastUpdated": { "type": "string", "nullable": true, "description": "Date the lead record was last updated. For Home Improvement leads, this means a new phone number was detected. For Other leads, this means any of the 5 contact/address fields changed: primary phone, secondary phone, primary email, secondary email, or full address. Also includes newly added records. This is the primary way to identify the freshest, most actionable leads — many businesses launch a website before adding their phone number or email, so the Last Updated date captures when that contact information first becomes available." }
         }
       },
       "FilterPreset": {
@@ -1324,8 +1662,12 @@
         "properties": {
           "id": { "type": "integer" },
           "name": { "type": "string" },
-          "keywords": { "type": "array", "items": { "type": "string" } },
-          "negativeKeywords": { "type": "array", "items": { "type": "string" } },
+          "type": { "type": "string", "enum": ["positive", "negative"], "description": "Whether this list contains include or exclude keywords" },
+          "keywords": { "type": "array", "items": { "type": "string" }, "description": "Keyword patterns (wildcards supported, e.g. *dentist*)" },
+          "sourceCategories": { "type": "array", "items": { "type": "string" }, "description": "Target categories this list was generated for (max 3 per list for optimal AI quality)", "maxItems": 3 },
+          "autoRefineEnabled": { "type": "boolean", "description": "Whether AI auto-refine is active for this list" },
+          "refinementStatus": { "type": "string", "nullable": true, "enum": ["running", "completed", "paused", null], "description": "Current refinement status" },
+          "pairedListId": { "type": "integer", "nullable": true, "description": "ID of the paired positive/negative list (auto-refine manages both together)" },
           "createdAt": { "type": "string", "format": "date-time" }
         }
       },
@@ -1335,7 +1677,8 @@
         "properties": {
           "name": { "type": "string" },
           "keywords": { "type": "array", "items": { "type": "string" } },
-          "negativeKeywords": { "type": "array", "items": { "type": "string" } }
+          "negativeKeywords": { "type": "array", "items": { "type": "string" } },
+          "sourceCategories": { "type": "array", "items": { "type": "string" }, "description": "Target categories (max 3 per list for best keyword quality)", "maxItems": 3 }
         }
       },
       "EmailSchedule": {
@@ -1349,6 +1692,9 @@
           "intervalUnit": { "type": "string", "enum": ["hours", "days"] },
           "isActive": { "type": "boolean" },
           "recipients": { "type": "array", "items": { "type": "string" } },
+          "distributionMode": { "type": "string", "enum": ["full_copy", "split_evenly"], "description": "How leads are distributed among recipients" },
+          "fullCopyRecipients": { "type": "array", "items": { "type": "string", "format": "email" }, "description": "Recipients who receive the full lead list when distributionMode is split_evenly" },
+          "maxLeadsPerEmail": { "type": "integer", "nullable": true, "minimum": 1, "description": "Maximum leads per email delivery. Overflow stored in lead reservoir. Null = no cap." },
           "lastSentAt": { "type": "string", "format": "date-time", "nullable": true },
           "totalSentCount": { "type": "integer" },
           "createdAt": { "type": "string", "format": "date-time" }
@@ -1356,21 +1702,24 @@
       },
       "EmailScheduleInput": {
         "type": "object",
-        "required": ["name", "filterPresetId", "intervalValue", "intervalUnit"],
+        "required": ["name", "filterPresetId", "intervalValue", "intervalUnit", "recipients"],
         "properties": {
           "name": { "type": "string" },
           "filterPresetId": { "type": "integer", "description": "ID of the filter preset to use" },
           "exportFormatId": { "type": "integer", "nullable": true, "description": "ID of export format (optional)" },
           "intervalValue": { "type": "integer", "minimum": 1, "description": "Delivery interval value" },
           "intervalUnit": { "type": "string", "enum": ["hours", "days"], "description": "Delivery interval unit" },
-          "recipients": { "type": "array", "items": { "type": "string", "format": "email" }, "maxItems": 50, "description": "Email recipients" },
+          "recipients": { "type": "array", "items": { "type": "string", "format": "email" }, "minItems": 1, "maxItems": 50, "description": "Email recipients (at least 1 required)" },
+          "distributionMode": { "type": "string", "enum": ["full_copy", "split_evenly"], "default": "full_copy", "description": "full_copy sends all leads to every recipient; split_evenly divides leads evenly among recipients" },
+          "fullCopyRecipients": { "type": "array", "items": { "type": "string", "format": "email" }, "maxItems": 50, "description": "Optional recipients who receive the full lead list when distributionMode is split_evenly (e.g. managers)" },
           "combinedFileEnabled": { "type": "boolean", "default": false },
           "combinedRecipients": { "type": "array", "items": { "type": "string", "format": "email" }, "maxItems": 50 },
           "combinedIncludeAssignee": { "type": "boolean", "default": true },
           "combinedIncludeFileName": { "type": "boolean", "default": true },
           "combinedColumnPosition": { "type": "string", "enum": ["beginning", "end"], "default": "end" },
           "combinedAssigneeColumnName": { "type": "string", "maxLength": 50, "default": "Assigned To" },
-          "combinedFileNameColumnName": { "type": "string", "maxLength": 50, "default": "File Part" }
+          "combinedFileNameColumnName": { "type": "string", "maxLength": 50, "default": "File Part" },
+          "maxLeadsPerEmail": { "type": "integer", "nullable": true, "minimum": 1, "description": "Maximum leads per email delivery. Overflow stored in lead reservoir. Null = no cap." }
         }
       },
       "EmailScheduleUpdate": {
@@ -1383,13 +1732,16 @@
           "filterPresetId": { "type": "integer" },
           "exportFormatId": { "type": "integer", "nullable": true },
           "recipients": { "type": "array", "items": { "type": "string" }, "maxItems": 50 },
+          "distributionMode": { "type": "string", "enum": ["full_copy", "split_evenly"], "description": "full_copy sends all leads to every recipient; split_evenly divides leads evenly among recipients" },
+          "fullCopyRecipients": { "type": "array", "items": { "type": "string", "format": "email" }, "maxItems": 50, "description": "Recipients who receive the full lead list when distributionMode is split_evenly" },
           "combinedFileEnabled": { "type": "boolean" },
           "combinedRecipients": { "type": "array", "items": { "type": "string" }, "maxItems": 50 },
           "combinedIncludeAssignee": { "type": "boolean" },
           "combinedIncludeFileName": { "type": "boolean" },
           "combinedColumnPosition": { "type": "string", "enum": ["beginning", "end"] },
           "combinedAssigneeColumnName": { "type": "string", "maxLength": 50 },
-          "combinedFileNameColumnName": { "type": "string", "maxLength": 50 }
+          "combinedFileNameColumnName": { "type": "string", "maxLength": 50 },
+          "maxLeadsPerEmail": { "type": "integer", "nullable": true, "minimum": 1, "description": "Maximum leads per email delivery. Overflow stored in lead reservoir. Null = no cap." }
         }
       },
       "ExportFormat": {

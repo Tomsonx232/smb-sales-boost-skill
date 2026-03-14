@@ -16,9 +16,28 @@ Place the `smb-sales-boost/` folder in your Claude skills directory:
 
 ## Requirements
 
-- Active SMB Sales Boost subscription: **Pro**, **Platinum**, **Enterprise**, or **Agency**
+- Active SMB Sales Boost subscription: **Starter**, **Growth**, **Scale**, **Platinum**, or **Enterprise**
 - API key generated from Dashboard > API tab (keys start with `smbk_`)
 - Base URL: `https://smbsalesboost.com/api/v1`
+- New users can purchase a subscription entirely via API — no web signup required
+
+## Credit-Based Plans
+
+Starter, Growth, and Scale plans use a credit-based model:
+
+- Each **net-new lead exported** deducts 1 credit
+- **Previously-exported leads** are free
+- Purchase additional permanent credits anytime via `POST /purchase-credits`
+
+**Credit Pricing:**
+
+| Plan | Per Credit |
+|------|-----------|
+| Starter | $0.10 |
+| Growth | $0.08 |
+| Scale | $0.05 |
+| Platinum | $0.03 |
+| Enterprise | $0.02 |
 
 ## Two Databases
 
@@ -41,17 +60,27 @@ Once the skill is installed, users can interact with SMB Sales Boost in natural 
 - **Filter by rating:** "Find contractors with at least 4 stars in Phoenix" (home_improvement only)
 - **Find fresh leads:** "Show me leads updated in the last week" (uses the Last Updated date — the best indicator of lead freshness)
 - **Exclude terms:** "Find new bakeries in NYC but exclude pizza and franchise"
+- **Full-text search:** "Search for organic coffee shops"
+- **Filter by website schema:** "Find businesses with LocalBusiness schema type" (other only)
+- **Filter by registration date:** "Show leads registered in the last 6 months" (other only)
 - **Export data:** "Export these leads as a CSV"
+- **Control export credits:** "Export but only spend 50 credits max"
+- **Free re-exports:** "Export only previously-exported leads" (uses `maxCredits: 0`)
 - **Manage filter presets:** "Save this search as 'FL Med Spas'"
 - **Manage keyword lists:** "Create a keyword list for pet industry leads"
-- **AI auto-refine:** "Enable auto-refine on my keyword list" — let AI continuously improve keyword lists
+- **AI auto-refine:** "Enable auto-refine on my keyword list" — single-pass AI optimization of keyword lists
 - **Set up email schedules:** "Email me new auto shop leads in Georgia every day"
+- **Split lead distribution:** "Split leads evenly among my sales team"
 - **Trigger email manually:** "Send my scheduled email now"
 - **AI suggestions:** "What categories should I target for my fitness equipment business?"
-- **AI keywords:** "Generate keywords for my business"
+- **AI keywords:** "Generate keywords for my business" (wildcard patterns, auto-refine enabled by default)
 - **Check AI job status:** "Check on my keyword generation"
 - **Manage blacklist:** "Exclude example.com from future exports"
-- **Account info:** "What subscription plan am I on?"
+- **Account info:** "What subscription plan am I on?" / "How many credits do I have?"
+- **Buy credits:** "Purchase 500 more credits"
+- **Change plans:** "Upgrade to the Growth plan"
+- **Cancel:** "Cancel my subscription"
+- **Sign up via API:** "I want to sign up for a Starter plan" (programmatic purchase, no web signup needed)
 
 ## Wildcard Keywords
 
@@ -74,21 +103,21 @@ Keywords without wildcards perform substring matching by default.
 The `lastUpdated` field is the primary way to identify the freshest, most actionable leads:
 
 - **Home Improvement leads:** Last Updated means a new phone number was detected
-- **Other leads:** Last Updated means the primary phone number and/or primary email address was updated
+- **Other leads:** Last Updated means any of the 5 contact/address fields changed: primary phone, secondary phone, primary email, secondary email, or full address
 - Also includes newly added records
 - Many businesses launch a website before adding contact info, so the Last Updated date captures when that information first becomes available
 
 ## Example Conversations
 
 ```
-User: I sell commercial cleaning supplies. Find me newly registered 
+User: I sell commercial cleaning supplies. Find me newly registered
       cleaning businesses in Florida and Georgia updated in the last 7 days.
 
-Claude: [Calls GET /leads with 
+Claude: [Calls GET /leads with
          positiveKeywords=["*clean*service*","*janitorial*","*maid*service*","*pressure*wash*"],
-         stateInclude=FL,GA, lastUpdatedFrom=2026-02-14]
+         stateInclude=FL,GA, lastUpdatedFrom=rel:7d]
 
-I found 287 cleaning-related businesses in Florida and Georgia updated 
+I found 287 cleaning-related businesses in Florida and Georgia updated
 in the last week. Here are the first 10:
 
 | Company Name               | City         | State | Phone        | Email                    | Last Updated |
@@ -102,28 +131,42 @@ or save this as a filter preset?
 ```
 
 ```
-User: Now find me pet grooming and veterinary businesses in Texas,
-      but exclude anything related to boarding or kennels.
+User: Export those leads but only spend 50 credits max.
 
-Claude: [Calls GET /leads with 
-         positiveKeywords=["*pet*groom*","*veterinar*","*vet*clinic*","*animal*hospital*"],
-         negativeKeywords=["*boarding*","*kennel*","*pet*hotel*"],
-         stateInclude=TX]
+Claude: [Calls POST /leads/export with current filters and maxCredits: 50]
 
-I found 156 pet grooming and veterinary businesses in Texas 
-(excluding boarding/kennel businesses). Here are the first 10:
-...
+Exported 50 new leads (50 credits used, 450 credits remaining).
+237 overflow leads stored in your lead reservoir for next export.
+Files saved: cleaning_leads_FL_GA.csv
 ```
 
 ```
 User: Enable auto-refine on my "TX Pet Services" keyword list.
 
-Claude: [Calls GET /keyword-lists to find the list ID, then 
+Claude: [Calls GET /keyword-lists to find the list ID, then
          POST /ai/auto-refine/enable with listId=42]
 
-Auto-refine is now enabled on your "TX Pet Services" keyword list (ID 42). 
-The AI will continuously refine your keywords to improve lead matching. 
+Auto-refine is now enabled on your "TX Pet Services" keyword list (ID 42).
+The AI will run a single-pass 4-phase optimization: validating existing keywords,
+discovering up to 15 new positives and 5 new negatives, then scoring quality.
 You can check the status anytime or disable it later.
+```
+
+```
+User: I want to sign up. What plans do you have?
+
+Claude: SMB Sales Boost offers three credit-based plans:
+
+| Plan | Credits/month | Per Credit |
+|------|--------------|-----------|
+| Starter | Included | $0.10 |
+| Growth | Included | $0.08 |
+| Scale | Included | $0.05 |
+
+Plus Platinum ($0.03/credit) and Enterprise ($0.02/credit) tiers.
+
+Would you like me to start a purchase? I can create a checkout session
+for you right here — no web signup needed.
 ```
 
 ## Rate Limits
@@ -135,16 +178,21 @@ You can check the status anytime or disable it later.
 - AI auto-refine enable: 5 per minute
 - AI auto-refine disable/status: 60 per minute
 - AI keyword status: 60 per minute
+- Programmatic purchase: 5 per hour per IP
+- Claim key: 30 per hour per IP
 
 ## API Coverage
 
-The skill covers all 35 SMB Sales Boost API endpoints:
+The skill covers all SMB Sales Boost API endpoints:
 
 | Feature | Endpoints | Operations |
 |---------|-----------|------------|
+| Programmatic Purchase | `/purchase`, `/claim-key` | Start purchase, Claim API key |
+| Credits & Subscription | `/purchase-credits`, `/subscription/change-plan`, `/subscription/cancel` | Buy credits, Change plan, Cancel |
 | User Profile | `/me` | Get, Update |
-| Lead Search | `/leads` | Search with filters |
-| Lead Export | `/leads/export` | Export to CSV/JSON/XLSX |
+| Lead Search | `/leads` | Search with filters (11 new filter params) |
+| Schema Types | `/leads/other/schema-types` | List available website schema types |
+| Lead Export | `/leads/export` | Export to CSV/JSON/XLSX (credit-aware) |
 | Filter Presets | `/filter-presets` | List, Create, Delete |
 | Keyword Lists | `/keyword-lists` | List, Create, Update, Delete |
 | Email Schedules | `/email-schedules` | List, Create, Update, Delete, Trigger |
@@ -152,7 +200,7 @@ The skill covers all 35 SMB Sales Boost API endpoints:
 | Export History | `/export-history` | List, Download |
 | Database Settings | `/settings/database`, `/settings/switch-database` | Get, Switch |
 | AI Categories | `/ai/suggest-categories` | Suggest categories |
-| AI Keywords | `/ai/generate-keywords`, `/ai/keyword-status` | Generate, Check status |
+| AI Keywords | `/ai/generate-keywords`, `/ai/keyword-status` | Generate (wildcard patterns), Check status |
 | AI Auto-Refine | `/ai/auto-refine/enable`, `/ai/auto-refine/disable`, `/ai/auto-refine/status` | Enable, Disable, Check status |
 | Export Blacklist | `/export-blacklist` | List, Add, Remove |
 

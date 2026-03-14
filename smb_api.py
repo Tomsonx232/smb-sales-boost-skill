@@ -9,7 +9,7 @@ Usage:
 Examples:
   python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\",\"*dentist*\",\"*orthodont*\"]","stateInclude":"TX","limit":"10"}'
   python smb_api.py smbk_xxx GET /me
-  python smb_api.py smbk_xxx POST /leads/export --body '{"database":"other","filters":{"positiveKeywords":["*med*spa*","*aesthet*","*botox*"],"stateInclude":"FL"}}'
+  python smb_api.py smbk_xxx POST /leads/export --body '{"database":"other","filters":{"positiveKeywords":["*med*spa*","*aesthet*","*botox*"],"stateInclude":"FL"},"maxCredits":100}'
   python smb_api.py smbk_xxx POST /ai/suggest-categories --body '{"companyName":"FitPro Supply","companyDescription":"Commercial fitness equipment","productService":"Gym equipment, treadmills"}'
   python smb_api.py smbk_xxx POST /ai/auto-refine/enable --body '{"listId":42}'
   python smb_api.py smbk_xxx GET /ai/auto-refine/status --params '{"listId":"42"}'
@@ -17,6 +17,12 @@ Examples:
   python smb_api.py smbk_xxx POST /email-schedules/15/trigger
   python smb_api.py smbk_xxx POST /filter-presets --body '{"name":"NY Bakeries","filters":{"positiveKeywords":["*bakery*","*cater*","*pastry*"],"stateInclude":"NY"}}'
   python smb_api.py smbk_xxx DELETE /filter-presets/42
+  python smb_api.py smbk_xxx POST /purchase-credits --body '{"creditCount":500}'
+  python smb_api.py smbk_xxx POST /subscription/change-plan --body '{"targetPlan":"growth"}'
+  python smb_api.py smbk_xxx POST /subscription/cancel
+  python smb_api.py none POST /purchase --body '{"email":"user@example.com","plan":"starter"}'
+  python smb_api.py none POST /claim-key --body '{"email":"user@example.com","claimToken":"tok_abc123"}'
+  python smb_api.py smbk_xxx GET /leads/other/schema-types
 """
 
 import sys
@@ -30,14 +36,19 @@ BASE_URL = "https://smbsalesboost.com/api/v1"
 SAFE_EXTENSIONS = {".csv", ".json", ".xlsx"}
 DEFAULT_OUTPUT_DIR = "/mnt/user-data/outputs"
 
+# Endpoints that do not require authentication
+UNAUTHENTICATED_ENDPOINTS = {"/purchase", "/claim-key"}
+
 
 def make_request(api_key, method, endpoint, params=None, body=None):
     """Make an authenticated API request and return the response."""
     url = f"{BASE_URL}{endpoint}"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Content-Type": "application/json"}
+
+    # Only include Authorization header if the endpoint requires it
+    # and a real API key is provided (not "none" placeholder)
+    if endpoint not in UNAUTHENTICATED_ENDPOINTS and api_key.lower() != "none":
+        headers["Authorization"] = f"Bearer {api_key}"
 
     method = method.upper()
     if method == "GET":
@@ -90,7 +101,7 @@ def save_export_files(data, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="SMB Sales Boost API Client")
-    parser.add_argument("api_key", help="API key (smbk_... prefix)")
+    parser.add_argument("api_key", help="API key (smbk_... prefix), or 'none' for unauthenticated endpoints")
     parser.add_argument("method", help="HTTP method: GET, POST, PATCH, PUT, DELETE")
     parser.add_argument("endpoint", help="API endpoint path, e.g. /leads, /me, /filter-presets")
     parser.add_argument("--params", default=None, help="Query parameters as JSON string (for GET requests)")
@@ -119,9 +130,25 @@ def main():
             "leadCount": data["data"].get("leadCount"),
             "exportId": data["data"].get("exportId"),
             "databaseType": data["data"].get("databaseType"),
+            "creditsUsed": data["data"].get("creditsUsed"),
+            "creditsRemaining": data["data"].get("creditsRemaining"),
+            "overflowCount": data["data"].get("overflowCount"),
+            "maxLeads": data["data"].get("maxLeads"),
+            "maxResults": data["data"].get("maxResults"),
+            "maxCredits": data["data"].get("maxCredits"),
             "savedFiles": saved
         }
+        # Remove None values for cleaner output
+        output = {k: v for k, v in output.items() if v is not None}
         print(json.dumps(output, indent=2))
+    elif resp.status_code == 402:
+        # Insufficient credits
+        print(json.dumps({
+            "status": 402,
+            "error": "insufficient_credits",
+            "message": data.get("message", "Insufficient credits to complete this export."),
+            "data": data
+        }, indent=2))
     else:
         # Standard JSON response — print it
         print(json.dumps(data, indent=2))
