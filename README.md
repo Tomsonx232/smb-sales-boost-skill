@@ -217,6 +217,8 @@ The skill covers all SMB Sales Boost API endpoints:
 
 **Purchase safeguards:** This skill can create real Stripe charges via `POST /purchase`, `POST /purchase-credits`, and `POST /subscription/change-plan`. The skill instructions require explicit user confirmation before executing any purchase or plan-change action.
 
+**Unauthenticated endpoints:** `POST /purchase` and `POST /claim-key` do not require an API key (they are used for new-user signup). Because they can initiate Stripe checkout sessions and retrieve API keys without credentials, the skill instructions explicitly prohibit autonomous invocation — the agent must always confirm with the user before calling them.
+
 **API key handling:** Pass your key via the `SMB_SALES_BOOST_API_KEY` environment variable or as a CLI argument. Never paste your API key into public chat windows, version control, or shared documents.
 
 ## Security
