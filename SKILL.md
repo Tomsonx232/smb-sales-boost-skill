@@ -1,6 +1,20 @@
 ---
 name: smb-sales-boost
 description: Query and manage leads from the SMB Sales Boost B2B lead database. Search newly registered businesses, filter by location/industry/keywords, export leads, manage filter presets, and use AI-powered category suggestions. Requires an active SMB Sales Boost subscription (Starter, Growth, Scale, Platinum, or Enterprise) and API key.
+credentials:
+  - name: SMB_SALES_BOOST_API_KEY
+    description: "API key for SMB Sales Boost (smbk_... prefix). Generate from Dashboard > API tab. Required for all authenticated endpoints."
+    required: true
+env:
+  - name: SMB_SALES_BOOST_API_KEY
+    description: "Your SMB Sales Boost API key (starts with smbk_). Required."
+    required: true
+tags:
+  - lead-generation
+  - b2b
+  - sales
+  - api-client
+data_sensitivity: "Exports may contain PII including business phone numbers and email addresses. Handle exported files with appropriate care."
 ---
 
 # SMB Sales Boost Skill
@@ -14,6 +28,10 @@ The user must provide their API key. Keys have a `smbk_` prefix and are generate
 **Base URL:** `https://smbsalesboost.com/api/v1`
 
 **Important:** API access requires a Starter, Growth, Scale, Platinum, or Enterprise subscription plan. New users can purchase a subscription entirely via API using the Programmatic Purchase endpoints (no web signup required).
+
+**Data Sensitivity:** Exported leads contain business contact information including phone numbers and email addresses (PII). Exported files are saved to the agent's output directory by default. Handle exported files with appropriate care — do not share them in public channels or store them in unsecured locations.
+
+**Export File Location:** By default, `smb_api.py` saves exported files to the `--output-dir` path (defaults to `/mnt/user-data/outputs`). You can override this with the `--output-dir` flag to save files to a preferred secure location.
 
 ## Authentication
 
@@ -292,6 +310,8 @@ Endpoints:
 
 ### 12. Programmatic Purchase — Buy a subscription via API
 
+**⚠ Purchase Confirmation Required:** Always confirm with the user before calling `POST /purchase`, `POST /purchase-credits`, or `POST /subscription/change-plan`. These endpoints create real Stripe charges. Never execute a purchase action without explicit user confirmation.
+
 No web signup required. New users can purchase and get an API key entirely via API:
 
 1. `POST /purchase` — Create a Stripe Checkout session. Provide `email` and `plan` (starter, growth, scale, platinum, or enterprise). Returns a `checkoutUrl` and `claimToken`.
@@ -299,6 +319,8 @@ No web signup required. New users can purchase and get an API key entirely via A
 3. `POST /claim-key` — After payment, provide `email` and `claimToken` to retrieve the API key. If payment is still pending, returns status `pending` — poll every 5-10 seconds.
 
 ### 13. Credits & Subscription Management
+
+**⚠ All purchase/plan-change endpoints create real charges — always confirm with the user first.**
 
 - `POST /purchase-credits` — Purchase additional permanent credits. Provide either `creditCount` (min 100, max 5x your plan's monthly credits) or `dollarAmount` (min $1). Uses saved payment method (Stripe off-session charge). Pricing: Starter 10¢, Growth 7.5¢, Scale 5¢ per credit. Only available for Starter, Growth, and Scale plans.
 - `GET /auto-top-up` — Get auto top-up configuration (trigger threshold, purchase amount, monthly cap, current usage).

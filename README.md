@@ -17,7 +17,7 @@ Place the `smb-sales-boost/` folder in your Claude skills directory:
 ## Requirements
 
 - Active SMB Sales Boost subscription: **Starter**, **Growth**, **Scale**, **Platinum**, or **Enterprise**
-- API key generated from Dashboard > API tab (keys start with `smbk_`)
+- API key generated from Dashboard > API tab (keys start with `smbk_`). Set as the `SMB_SALES_BOOST_API_KEY` environment variable or pass directly to `smb_api.py` as the first argument
 - Base URL: `https://smbsalesboost.com/api/v1`
 - New users can purchase a subscription entirely via API — no web signup required
 
@@ -210,6 +210,14 @@ The skill covers all SMB Sales Boost API endpoints:
 | AI Keywords | `/ai/generate-keywords`, `/ai/keyword-status` | Generate (wildcard patterns), Check status |
 | AI Auto-Refine | `/ai/auto-refine/enable`, `/ai/auto-refine/disable`, `/ai/auto-refine/status` | Enable, Disable, Check status |
 | Export Blacklist | `/export-blacklist` | List, Add, Remove |
+
+## Data Privacy & Purchases
+
+**PII in exports:** Exported lead files contain business contact information including phone numbers and email addresses. By default, exports are saved to the `--output-dir` path (defaults to `/mnt/user-data/outputs`). Ensure this location is secure and do not share exported files in public channels.
+
+**Purchase safeguards:** This skill can create real Stripe charges via `POST /purchase`, `POST /purchase-credits`, and `POST /subscription/change-plan`. The skill instructions require explicit user confirmation before executing any purchase or plan-change action.
+
+**API key handling:** Pass your key via the `SMB_SALES_BOOST_API_KEY` environment variable or as a CLI argument. Never paste your API key into public chat windows, version control, or shared documents.
 
 ## Security
 
