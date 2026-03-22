@@ -1,20 +1,6 @@
 ---
 name: smb-sales-boost
-description: Query and manage leads from the SMB Sales Boost B2B lead database. Search newly registered businesses, filter by location/industry/keywords, export leads, manage filter presets, and use AI-powered category suggestions. Requires an active SMB Sales Boost subscription (Starter, Growth, Scale, Platinum, or Enterprise) and API key.
-credentials:
-  - name: SMB_SALES_BOOST_API_KEY
-    description: "API key for SMB Sales Boost (smbk_... prefix). Generate from Dashboard > API tab. Required for all authenticated endpoints."
-    required: true
-env:
-  - name: SMB_SALES_BOOST_API_KEY
-    description: "Your SMB Sales Boost API key (starts with smbk_). Required."
-    required: true
-tags:
-  - lead-generation
-  - b2b
-  - sales
-  - api-client
-data_sensitivity: "Exports may contain PII including business phone numbers and email addresses. Handle exported files with appropriate care."
+description: Query and manage leads from the SMB Sales Boost B2B lead database. Search newly registered businesses, filter by location/industry/keywords, export leads, manage filter presets, and use AI-powered category suggestions. REQUIRED CREDENTIAL — SMB_SALES_BOOST_API_KEY environment variable (smbk_... prefix, generate from Dashboard > API tab). Exports contain PII (business phone numbers and email addresses) — handle with care. Includes programmatic purchase endpoints that create real Stripe charges — always confirm with the user before executing.
 ---
 
 # SMB Sales Boost Skill
