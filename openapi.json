@@ -3,7 +3,7 @@
   "info": {
     "title": "SMB Sales Boost API",
     "version": "1.0.0",
-    "description": "REST API for SMB Sales Boost — a B2B lead generation platform providing access to newly registered small and medium businesses across the United States. Search, filter, and export leads with comprehensive company data including contact information, location, and AI-enriched categories. API access requires a Starter, Growth, Scale, Platinum, or Enterprise subscription plan. New users can purchase a subscription entirely via API using the Programmatic Purchase endpoints (no web signup required). A Model Context Protocol (MCP) server is also available at https://smbsalesboost.com/mcp for AI assistant integration — see https://smbsalesboost.com/docs/api/mcp-server for details.",
+    "description": "REST API for SMB Sales Boost - a B2B lead generation platform providing access to newly registered small and medium businesses across the United States. Search, filter, and export leads with comprehensive company data including contact information, location, and AI-enriched categories. API access requires a Starter, Growth, Scale, Platinum, or Enterprise subscription plan. New users can purchase a subscription entirely via API using the Programmatic Purchase endpoints (no web signup required). A Model Context Protocol (MCP) server is also available at https://smbsalesboost.com/mcp for AI assistant integration - see https://smbsalesboost.com/docs/api/mcp-server for details.",
     "contact": {
       "name": "SMB Sales Boost Support",
       "email": "support@smbsalesboost.com",
@@ -26,23 +26,61 @@
     }
   ],
   "tags": [
-    { "name": "Programmatic Purchase", "description": "Purchase a subscription and claim your API key entirely via API (no web signup required)" },
-    { "name": "User Profile", "description": "View and update your account profile" },
-    { "name": "Leads", "description": "Search, filter, and export leads from the database" },
-    { "name": "Filter Presets", "description": "Save and manage reusable filter configurations" },
-    { "name": "Keyword Lists", "description": "Manage keyword lists for targeted lead searching" },
-    { "name": "Email Schedules", "description": "Automated email delivery of leads matching your filters" },
-    { "name": "Export Formats", "description": "Customize export column layouts and file settings" },
-    { "name": "Export History", "description": "View and re-download past exports" },
-    { "name": "Account Settings", "description": "Database switching and account configuration" },
-    { "name": "AI Features", "description": "AI-powered category suggestions and keyword generation" },
-    { "name": "Credits & Subscription", "description": "Purchase additional credits and manage your subscription" },
-    { "name": "Export Blacklist", "description": "Manage leads excluded from future exports" }
+    {
+      "name": "Programmatic Purchase",
+      "description": "Purchase a subscription and claim your API key entirely via API (no web signup required)"
+    },
+    {
+      "name": "User Profile",
+      "description": "View and update your account profile"
+    },
+    {
+      "name": "Leads",
+      "description": "Search, filter, and export leads from the database"
+    },
+    {
+      "name": "Filter Presets",
+      "description": "Save and manage reusable filter configurations"
+    },
+    {
+      "name": "Keyword Lists",
+      "description": "Manage keyword lists for targeted lead searching"
+    },
+    {
+      "name": "Email Schedules",
+      "description": "Automated email delivery of leads matching your filters"
+    },
+    {
+      "name": "Export Formats",
+      "description": "Customize export column layouts and file settings"
+    },
+    {
+      "name": "Export History",
+      "description": "View and re-download past exports"
+    },
+    {
+      "name": "Account Settings",
+      "description": "Database switching and account configuration"
+    },
+    {
+      "name": "AI Features",
+      "description": "AI-powered category suggestions and keyword generation"
+    },
+    {
+      "name": "Credits & Subscription",
+      "description": "Purchase additional credits and manage your subscription"
+    },
+    {
+      "name": "Export Blacklist",
+      "description": "Manage leads excluded from future exports"
+    }
   ],
   "paths": {
     "/purchase": {
       "post": {
-        "tags": ["Programmatic Purchase"],
+        "tags": [
+          "Programmatic Purchase"
+        ],
         "operationId": "createPurchase",
         "summary": "Start a subscription purchase",
         "description": "Create a Stripe Checkout session for purchasing a subscription entirely via API. No web signup or onboarding required. Returns a checkout URL and a claim token. After payment is completed at the checkout URL, use POST /api/v1/claim-key with the claim token to retrieve your API key. Rate limited to 5 requests per hour per IP.",
@@ -53,10 +91,29 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["email", "plan"],
+                "required": [
+                  "email",
+                  "plan"
+                ],
                 "properties": {
-                  "email": { "type": "string", "format": "email", "description": "Customer email address", "example": "user@example.com" },
-                  "plan": { "type": "string", "enum": ["starter", "growth", "scale", "platinum", "enterprise"], "description": "Subscription plan to purchase", "example": "growth" }
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Customer email address",
+                    "example": "user@example.com"
+                  },
+                  "plan": {
+                    "type": "string",
+                    "enum": [
+                      "starter",
+                      "growth",
+                      "scale",
+                      "platinum",
+                      "enterprise"
+                    ],
+                    "description": "Subscription plan to purchase",
+                    "example": "growth"
+                  }
                 }
               }
             }
@@ -73,11 +130,28 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "checkoutUrl": { "type": "string", "format": "uri", "description": "Stripe Checkout URL — redirect or open this to complete payment" },
-                        "claimToken": { "type": "string", "description": "Claim token (claim_ prefix + 32 random bytes). Use with POST /api/v1/claim-key after payment." },
-                        "expiresAt": { "type": "string", "format": "date-time", "description": "When this purchase session expires (24 hours from creation)" },
-                        "plan": { "type": "string", "description": "The plan being purchased" },
-                        "message": { "type": "string", "description": "Instructions for next steps" }
+                        "checkoutUrl": {
+                          "type": "string",
+                          "format": "uri",
+                          "description": "Stripe Checkout URL - redirect or open this to complete payment"
+                        },
+                        "claimToken": {
+                          "type": "string",
+                          "description": "Claim token (claim_ prefix + 32 random bytes). Use with POST /api/v1/claim-key after payment."
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When this purchase session expires (24 hours from creation)"
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "The plan being purchased"
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Instructions for next steps"
+                        }
                       }
                     }
                   }
@@ -85,20 +159,32 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "description": "Email is forbidden from purchasing" },
-          "409": { "description": "An active subscription already exists for this email" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "503": { "description": "Payment processing is not configured" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "description": "Email is forbidden from purchasing"
+          },
+          "409": {
+            "description": "An active subscription already exists for this email"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "Payment processing is not configured"
+          }
         }
       }
     },
     "/claim-key": {
       "post": {
-        "tags": ["Programmatic Purchase"],
+        "tags": [
+          "Programmatic Purchase"
+        ],
         "operationId": "claimApiKey",
         "summary": "Claim your API key after payment",
-        "description": "After completing payment at the Stripe Checkout URL, use this endpoint with your email and claim token to retrieve your API key. The API key is returned once and cannot be retrieved again. If payment is still pending, returns status 'pending' — poll every 5-10 seconds. Rate limited to 30 requests per hour per IP.",
+        "description": "After completing payment at the Stripe Checkout URL, use this endpoint with your email and claim token to retrieve your API key. The API key is returned once and cannot be retrieved again. If payment is still pending, returns status 'pending' - poll every 5-10 seconds. Rate limited to 30 requests per hour per IP.",
         "security": [],
         "requestBody": {
           "required": true,
@@ -106,10 +192,22 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["email", "claimToken"],
+                "required": [
+                  "email",
+                  "claimToken"
+                ],
                 "properties": {
-                  "email": { "type": "string", "format": "email", "description": "Email used during purchase", "example": "user@example.com" },
-                  "claimToken": { "type": "string", "description": "Claim token received from POST /api/v1/purchase", "example": "claim_abc123..." }
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Email used during purchase",
+                    "example": "user@example.com"
+                  },
+                  "claimToken": {
+                    "type": "string",
+                    "description": "Claim token received from POST /api/v1/purchase",
+                    "example": "claim_abc123..."
+                  }
                 }
               }
             }
@@ -126,10 +224,22 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "apiKey": { "type": "string", "description": "Your API key (smbk_ prefix). Store securely — shown only once." },
-                        "plan": { "type": "string", "description": "Subscription plan" },
-                        "email": { "type": "string", "description": "Account email" },
-                        "message": { "type": "string", "description": "Account setup recommendations" }
+                        "apiKey": {
+                          "type": "string",
+                          "description": "Your API key (smbk_ prefix). Store securely - shown only once."
+                        },
+                        "plan": {
+                          "type": "string",
+                          "description": "Subscription plan"
+                        },
+                        "email": {
+                          "type": "string",
+                          "description": "Account email"
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Account setup recommendations"
+                        }
                       }
                     }
                   }
@@ -138,7 +248,7 @@
             }
           },
           "202": {
-            "description": "Payment not yet completed — poll again in 5-10 seconds",
+            "description": "Payment not yet completed - poll again in 5-10 seconds",
             "content": {
               "application/json": {
                 "schema": {
@@ -147,8 +257,15 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "status": { "type": "string", "enum": ["pending"] },
-                        "message": { "type": "string" }
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -156,18 +273,32 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "description": "Email does not match the purchase record" },
-          "404": { "description": "Invalid claim token" },
-          "409": { "description": "API key has already been claimed" },
-          "410": { "description": "Purchase session has expired" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "description": "Email does not match the purchase record"
+          },
+          "404": {
+            "description": "Invalid claim token"
+          },
+          "409": {
+            "description": "API key has already been claimed"
+          },
+          "410": {
+            "description": "Purchase session has expired"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/me": {
       "get": {
-        "tags": ["User Profile"],
+        "tags": [
+          "User Profile"
+        ],
         "operationId": "getUserProfile",
         "summary": "Get your profile",
         "description": "Retrieve your user profile including subscription details, account settings, and onboarding status.",
@@ -179,18 +310,26 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/UserProfile" }
+                    "data": {
+                      "$ref": "#/components/schemas/UserProfile"
+                    }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       },
       "patch": {
-        "tags": ["User Profile"],
+        "tags": [
+          "User Profile"
+        ],
         "operationId": "updateUserProfile",
         "summary": "Update your profile",
         "description": "Update your profile fields. Only provided fields are updated. Allowed fields: firstName, lastName, companyName, companyWebsite.",
@@ -201,10 +340,22 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "firstName": { "type": "string", "example": "John" },
-                  "lastName": { "type": "string", "example": "Doe" },
-                  "companyName": { "type": "string", "example": "Acme Corp" },
-                  "companyWebsite": { "type": "string", "example": "https://acme.com" }
+                  "firstName": {
+                    "type": "string",
+                    "example": "John"
+                  },
+                  "lastName": {
+                    "type": "string",
+                    "example": "Doe"
+                  },
+                  "companyName": {
+                    "type": "string",
+                    "example": "Acme Corp"
+                  },
+                  "companyWebsite": {
+                    "type": "string",
+                    "example": "https://acme.com"
+                  }
                 }
               }
             }
@@ -218,78 +369,504 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/UserProfileBasic" }
+                    "data": {
+                      "$ref": "#/components/schemas/UserProfileBasic"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/leads": {
       "get": {
-        "tags": ["Leads"],
+        "tags": [
+          "Leads"
+        ],
         "operationId": "searchLeads",
         "summary": "Search and filter leads",
-        "description": "Search the lead database with keyword filters, location filters, and other criteria. Requires at least one positive filter (positiveKeywords or column-specific include terms). Uses a two-phase filtering model: Phase 1 (Include) combines all positive keywords with OR logic, Phase 2 (Exclude) removes matches via AND logic.\n\nTwo Database Types: The 'home_improvement' database contains contractor and home service businesses with phone numbers as the available contact method. The 'other' database contains all other business types (e.g., accounting firms, marketing agencies, medical practices) with both phone numbers and email addresses as available contact methods.\n\nWildcard Pattern Matching: All keyword and term parameters support `*` as a wildcard character that matches any sequence of characters. For example, `*account*` matches 'accounting', 'accountant', 'accounting firm', etc. Multiple wildcards in a single term let you match compound phrases: `*book*keep*` matches 'bookkeeping', 'bookkeeper services', etc. Other examples: `*market*agency*`, `*tax*prep*`. Keywords without wildcards perform substring matching by default (equivalent to wrapping in `*...*`).",
+        "description": "Search the lead database with keyword filters, location filters, and other criteria. Requires at least one positive filter (positiveKeywords or column-specific include terms). Uses a two-phase filtering model: Phase 1 (Include) combines all positive keywords with OR logic, Phase 2 (Exclude) removes matches via AND logic.\n\nCredit System: Each new lead returned costs 1 credit. Previously-exported leads are free to re-query. Use maxCredits and maxResults parameters to control credit usage. When either is specified, credit-optimized ordering is applied: new leads (credit-consuming) are sorted first, then previously-exported leads fill remaining slots.\n\nTwo Database Types: The 'home_improvement' database contains contractor and home service businesses with phone numbers as the available contact method. The 'other' database contains all other business types (e.g., accounting firms, marketing agencies, medical practices) with both phone numbers and email addresses as available contact methods.\n\nWildcard Pattern Matching: All keyword and term parameters support `*` as a wildcard character that matches any sequence of characters. For example, `*account*` matches 'accounting', 'accountant', 'accounting firm', etc. Multiple wildcards in a single term let you match compound phrases: `*book*keep*` matches 'bookkeeping', 'bookkeeper services', etc. Other examples: `*market*agency*`, `*tax*prep*`. Keywords without wildcards perform substring matching by default (equivalent to wrapping in `*...*`).",
         "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 }, "description": "Page number" },
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100, "maximum": 1000 }, "description": "Results per page (max 1000)" },
-          { "name": "database", "in": "query", "schema": { "type": "string", "enum": ["home_improvement", "other"] }, "description": "Database type. 'home_improvement' contains contractors/home service businesses (phone numbers only). 'other' contains all other business types (phone numbers and email addresses). Defaults to your account setting." },
-          { "name": "positiveKeywords", "in": "query", "schema": { "type": "string" }, "description": "JSON array of keywords to include. Matched via OR across default columns. Supports * wildcard for flexible pattern matching (e.g., [\"*account*\", \"*book*keep*\", \"*tax*prep*\"]). Keywords without wildcards perform substring matching by default." },
-          { "name": "negativeKeywords", "in": "query", "schema": { "type": "string" }, "description": "JSON array of keywords to exclude. Checked against same columns as positive keywords. Supports * wildcard (e.g., [\"*franchise*\"])." },
-          { "name": "orColumns", "in": "query", "schema": { "type": "string" }, "description": "JSON array of column names for keyword matching. Overrides defaults for both positive and negative keywords." },
-          { "name": "stateInclude", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated US state codes to include (e.g. CA,NY,TX)" },
-          { "name": "stateExclude", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated US state codes to exclude" },
-          { "name": "cityInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of cities to include" },
-          { "name": "cityExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of cities to exclude" },
-          { "name": "zipInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of ZIP codes to include" },
-          { "name": "zipExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of ZIP codes to exclude" },
-          { "name": "nameIncludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of business name include terms" },
-          { "name": "nameExcludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of business name exclude terms" },
-          { "name": "sortBy", "in": "query", "schema": { "type": "string" }, "description": "Field to sort by" },
-          { "name": "sortOrder", "in": "query", "schema": { "type": "string", "enum": ["asc", "desc"], "default": "desc" }, "description": "Sort direction" },
-          { "name": "minStars", "in": "query", "schema": { "type": "number" }, "description": "Minimum star rating (home_improvement only)" },
-          { "name": "maxStars", "in": "query", "schema": { "type": "number" }, "description": "Maximum star rating (home_improvement only)" },
-          { "name": "minReviewCount", "in": "query", "schema": { "type": "integer" }, "description": "Minimum review count (home_improvement only)" },
-          { "name": "maxReviewCount", "in": "query", "schema": { "type": "integer" }, "description": "Maximum review count (home_improvement only)" },
-          { "name": "categoriesIncludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of category include terms (home_improvement only)" },
-          { "name": "categoriesExcludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of category exclude terms (home_improvement only)" },
-          { "name": "reviewSnippetIncludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of review snippet include terms (home_improvement only)" },
-          { "name": "reviewSnippetExcludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of review snippet exclude terms (home_improvement only)" },
-          { "name": "profileUrlIncludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of profile URL include terms (home_improvement only)" },
-          { "name": "profileUrlExcludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of profile URL exclude terms (home_improvement only)" },
-          { "name": "urlIncludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of registered URL include terms (other only)" },
-          { "name": "urlExcludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of registered URL exclude terms (other only)" },
-          { "name": "crawledUrlIncludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of crawled URL include terms (other only)" },
-          { "name": "crawledUrlExcludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of crawled URL exclude terms (other only)" },
-          { "name": "descriptionIncludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of short description include terms (other only)" },
-          { "name": "descriptionExcludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of short description exclude terms (other only)" },
-          { "name": "descriptionLongIncludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of long description include terms (other only)" },
-          { "name": "descriptionLongExcludeTerms", "in": "query", "schema": { "type": "string" }, "description": "JSON array of long description exclude terms (other only)" },
-          { "name": "emailPrimaryInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of primary email include terms (other only)" },
-          { "name": "emailPrimaryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of primary email exclude terms (other only)" },
-          { "name": "phonePrimaryInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of primary phone include terms (other only)" },
-          { "name": "phonePrimaryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of primary phone exclude terms (other only)" },
-          { "name": "emailSecondaryInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of secondary email include terms (other only)" },
-          { "name": "emailSecondaryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of secondary email exclude terms (other only)" },
-          { "name": "phoneSecondaryInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of secondary phone include terms (other only)" },
-          { "name": "phoneSecondaryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of secondary phone exclude terms (other only)" },
-          { "name": "redirectFilter", "in": "query", "schema": { "type": "string", "enum": ["yes", "no"] }, "description": "Filter by redirect status (other only)" },
-          { "name": "updateReasonFilter", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated update reasons to filter by (e.g., Newly Added,Phone Primary)" },
-          { "name": "websiteSchemaFilter", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated website schema types to filter by (other only, e.g., LocalBusiness,Organization). Use GET /leads/other/schema-types for available values." },
-          { "name": "lastUpdatedFrom", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter leads by Last Updated date (after this date). For Home Improvement leads, Last Updated means a new phone number was detected. For Other leads, it means any of the 5 contact/address fields changed: primary phone, secondary phone, primary email, secondary email, or full address. Also includes newly added records. This is the primary way to identify the freshest leads — many businesses launch a website before adding contact info, so Last Updated captures when that information first becomes available." },
-          { "name": "lastUpdatedTo", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter leads by Last Updated date (before this date)." },
-          { "name": "timeScrapedFrom", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter leads scraped after this date (ISO 8601 or relative format e.g. rel:30d)" },
-          { "name": "timeScrapedTo", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter leads scraped before this date (ISO 8601)" },
-          { "name": "registrationDateFrom", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter by domain registration date start (other only). Accepts ISO or relative format (e.g. rel:6m)" },
-          { "name": "registrationDateTo", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter by domain registration date end (other only, ISO 8601)" },
-          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Full-text search across all fields" },
-          { "name": "countryInclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of countries to include" },
-          { "name": "countryExclude", "in": "query", "schema": { "type": "string" }, "description": "JSON array of countries to exclude" }
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "maximum": 1000
+            },
+            "description": "Results per page (max 1000)"
+          },
+          {
+            "name": "database",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home_improvement",
+                "other"
+              ]
+            },
+            "description": "Database type. 'home_improvement' contains contractors/home service businesses (phone numbers only). 'other' contains all other business types (phone numbers and email addresses). Defaults to your account setting."
+          },
+          {
+            "name": "positiveKeywords",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of keywords to include. Matched via OR across default columns. Supports * wildcard for flexible pattern matching (e.g., [\"*account*\", \"*book*keep*\", \"*tax*prep*\"]). Keywords without wildcards perform substring matching by default."
+          },
+          {
+            "name": "negativeKeywords",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of keywords to exclude. Checked against same columns as positive keywords. Supports * wildcard (e.g., [\"*franchise*\"])."
+          },
+          {
+            "name": "orColumns",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of column names for keyword matching. Overrides defaults for both positive and negative keywords."
+          },
+          {
+            "name": "stateInclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated US state codes to include (e.g. CA,NY,TX)"
+          },
+          {
+            "name": "stateExclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated US state codes to exclude"
+          },
+          {
+            "name": "cityInclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of cities to include"
+          },
+          {
+            "name": "cityExclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of cities to exclude"
+          },
+          {
+            "name": "zipInclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of ZIP codes to include"
+          },
+          {
+            "name": "zipExclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of ZIP codes to exclude"
+          },
+          {
+            "name": "nameIncludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of business name include terms"
+          },
+          {
+            "name": "nameExcludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of business name exclude terms"
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Field to sort by"
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            },
+            "description": "Sort direction"
+          },
+          {
+            "name": "minStars",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            },
+            "description": "Minimum star rating (home_improvement only)"
+          },
+          {
+            "name": "maxStars",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            },
+            "description": "Maximum star rating (home_improvement only)"
+          },
+          {
+            "name": "minReviewCount",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Minimum review count (home_improvement only)"
+          },
+          {
+            "name": "maxReviewCount",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Maximum review count (home_improvement only)"
+          },
+          {
+            "name": "categoriesIncludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of category include terms (home_improvement only)"
+          },
+          {
+            "name": "categoriesExcludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of category exclude terms (home_improvement only)"
+          },
+          {
+            "name": "reviewSnippetIncludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of review snippet include terms (home_improvement only)"
+          },
+          {
+            "name": "reviewSnippetExcludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of review snippet exclude terms (home_improvement only)"
+          },
+          {
+            "name": "profileUrlIncludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of profile URL include terms (home_improvement only)"
+          },
+          {
+            "name": "profileUrlExcludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of profile URL exclude terms (home_improvement only)"
+          },
+          {
+            "name": "urlIncludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of registered URL include terms (other only)"
+          },
+          {
+            "name": "urlExcludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of registered URL exclude terms (other only)"
+          },
+          {
+            "name": "crawledUrlIncludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of crawled URL include terms (other only)"
+          },
+          {
+            "name": "crawledUrlExcludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of crawled URL exclude terms (other only)"
+          },
+          {
+            "name": "descriptionIncludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of short description include terms (other only)"
+          },
+          {
+            "name": "descriptionExcludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of short description exclude terms (other only)"
+          },
+          {
+            "name": "descriptionLongIncludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of long description include terms (other only)"
+          },
+          {
+            "name": "descriptionLongExcludeTerms",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of long description exclude terms (other only)"
+          },
+          {
+            "name": "emailPrimaryInclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of primary email include terms (other only)"
+          },
+          {
+            "name": "emailPrimaryExclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of primary email exclude terms (other only)"
+          },
+          {
+            "name": "phonePrimaryInclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of primary phone include terms (other only)"
+          },
+          {
+            "name": "phonePrimaryExclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of primary phone exclude terms (other only)"
+          },
+          {
+            "name": "emailSecondaryInclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of secondary email include terms (other only)"
+          },
+          {
+            "name": "emailSecondaryExclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of secondary email exclude terms (other only)"
+          },
+          {
+            "name": "phoneSecondaryInclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of secondary phone include terms (other only)"
+          },
+          {
+            "name": "phoneSecondaryExclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of secondary phone exclude terms (other only)"
+          },
+          {
+            "name": "redirectFilter",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "yes",
+                "no"
+              ]
+            },
+            "description": "Filter by redirect status (other only)"
+          },
+          {
+            "name": "updateReasonFilter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated update reasons to filter by (e.g., Newly Added,Phone Primary)"
+          },
+          {
+            "name": "websiteSchemaFilter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated website schema types to filter by (other only, e.g., LocalBusiness,Organization). Use GET /leads/other/schema-types for available values."
+          },
+          {
+            "name": "lastUpdatedFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Filter leads by Last Updated date (after this date). For Home Improvement leads, Last Updated means a new phone number was detected. For Other leads, it means any of the 5 contact/address fields changed: primary phone, secondary phone, primary email, secondary email, or full address. Also includes newly added records. This is the primary way to identify the freshest leads - many businesses launch a website before adding contact info, so Last Updated captures when that information first becomes available."
+          },
+          {
+            "name": "lastUpdatedTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Filter leads by Last Updated date (before this date)."
+          },
+          {
+            "name": "timeScrapedFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Filter leads scraped after this date (ISO 8601 or relative format e.g. rel:30d)"
+          },
+          {
+            "name": "timeScrapedTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Filter leads scraped before this date (ISO 8601)"
+          },
+          {
+            "name": "registrationDateFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Filter by domain registration date start (other only). Accepts ISO or relative format (e.g. rel:6m)"
+          },
+          {
+            "name": "registrationDateTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Filter by domain registration date end (other only, ISO 8601)"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Full-text search across all fields"
+          },
+          {
+            "name": "countryInclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of countries to include"
+          },
+          {
+            "name": "countryExclude",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON array of countries to exclude"
+          },
+          {
+            "name": "maxResults",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum total leads to return (new + previously-exported). New leads are prioritized first, then previously-exported leads fill remaining slots. When specified, credit-optimized ordering is applied."
+          },
+          {
+            "name": "maxCredits",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Maximum number of credits to spend on this query. Only new (credit-consuming) leads count toward this cap. Previously-exported leads are included for free up to the maxResults or page limit. Set to 0 to only receive previously-exported leads at no credit cost. If omitted, no credit cap is applied (standard credit deduction)."
+          }
         ],
         "responses": {
           "200": {
@@ -304,12 +881,43 @@
                       "properties": {
                         "leads": {
                           "type": "array",
-                          "items": { "$ref": "#/components/schemas/Lead" }
+                          "items": {
+                            "$ref": "#/components/schemas/Lead"
+                          }
                         },
-                        "totalCount": { "type": "integer", "description": "Total matching leads before pagination" },
-                        "page": { "type": "integer" },
-                        "limit": { "type": "integer" },
-                        "databaseType": { "type": "string", "enum": ["home_improvement", "other"] }
+                        "totalCount": {
+                          "type": "integer",
+                          "description": "Total matching leads before pagination"
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "databaseType": {
+                          "type": "string",
+                          "enum": [
+                            "home_improvement",
+                            "other"
+                          ]
+                        },
+                        "creditsUsed": {
+                          "type": "integer",
+                          "description": "Number of credits consumed by this query (only present for credit-plan users)"
+                        },
+                        "creditsRemaining": {
+                          "type": "integer",
+                          "description": "Total credits remaining after this query (only present for credit-plan users)"
+                        },
+                        "maxResults": {
+                          "type": "integer",
+                          "description": "Echo of maxResults parameter (only present when maxResults was specified)"
+                        },
+                        "maxCredits": {
+                          "type": "integer",
+                          "description": "Echo of maxCredits parameter (only present when maxCredits was specified)"
+                        }
                       }
                     }
                   }
@@ -317,14 +925,23 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "Insufficient credits. Use maxCredits or maxResults to limit credit usage, reduce page size with limit parameter, or purchase more credits via POST /purchase-credits."
+          }
         }
       }
     },
     "/leads/other/schema-types": {
       "get": {
-        "tags": ["Leads"],
+        "tags": [
+          "Leads"
+        ],
         "operationId": "getSchemaTypes",
         "summary": "List available website schema types",
         "description": "Returns a sorted list of all distinct website schema types found in the Other leads database. Use these values with the websiteSchemaFilter parameter on GET /leads.",
@@ -335,19 +952,34 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "type": "string" },
-                  "example": ["AutoDealer", "Dentist", "HomeAndConstructionBusiness", "LegalService", "LocalBusiness", "MedicalBusiness", "Organization", "Restaurant"]
+                  "items": {
+                    "type": "string"
+                  },
+                  "example": [
+                    "AutoDealer",
+                    "Dentist",
+                    "HomeAndConstructionBusiness",
+                    "LegalService",
+                    "LocalBusiness",
+                    "MedicalBusiness",
+                    "Organization",
+                    "Restaurant"
+                  ]
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/leads/export": {
       "post": {
-        "tags": ["Leads"],
+        "tags": [
+          "Leads"
+        ],
         "operationId": "exportLeads",
         "summary": "Export leads to CSV/JSON/XLSX",
         "description": "Export leads matching your filters as downloadable files. Supports CSV, JSON, and XLSX formats. Up to 10,000 leads per export. For credit-plan users (Starter/Growth/Scale), each net-new lead exported deducts 1 credit. Rate limited to 1 export per 5 minutes.",
@@ -358,14 +990,22 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "database": { "type": "string", "enum": ["home_improvement", "other"] },
+                  "database": {
+                    "type": "string",
+                    "enum": [
+                      "home_improvement",
+                      "other"
+                    ]
+                  },
                   "filters": {
                     "type": "object",
                     "description": "Same filter parameters as GET /leads (positiveKeywords, negativeKeywords, stateInclude, etc.)"
                   },
                   "selectedIds": {
                     "type": "array",
-                    "items": { "type": "integer" },
+                    "items": {
+                      "type": "integer"
+                    },
                     "description": "Specific lead IDs to export (alternative to filters)"
                   },
                   "formatId": {
@@ -408,22 +1048,55 @@
                           "items": {
                             "type": "object",
                             "properties": {
-                              "fileName": { "type": "string" },
-                              "fileType": { "type": "string" },
-                              "data": { "type": "string", "description": "Base64-encoded file content" },
-                              "size": { "type": "integer" }
+                              "fileName": {
+                                "type": "string"
+                              },
+                              "fileType": {
+                                "type": "string"
+                              },
+                              "data": {
+                                "type": "string",
+                                "description": "Base64-encoded file content"
+                              },
+                              "size": {
+                                "type": "integer"
+                              }
                             }
                           }
                         },
-                        "leadCount": { "type": "integer" },
-                        "exportId": { "type": "integer" },
-                        "databaseType": { "type": "string" },
-                        "creditsUsed": { "type": "integer", "description": "Number of credits deducted for net-new leads (credit-plan users only)" },
-                        "creditsRemaining": { "type": "integer", "description": "Remaining credit balance after this export (credit-plan users only)" },
-                        "maxLeads": { "type": "integer", "description": "Echo of maxLeads parameter (only present when maxLeads was specified)" },
-                        "overflowCount": { "type": "integer", "description": "Number of leads stored in the reservoir due to maxLeads cap (only present when maxLeads is specified)" },
-                        "maxResults": { "type": "integer", "description": "Echo of maxResults parameter (only present when maxResults was specified)" },
-                        "maxCredits": { "type": "integer", "description": "Echo of maxCredits parameter (only present when maxCredits was specified)" }
+                        "leadCount": {
+                          "type": "integer"
+                        },
+                        "exportId": {
+                          "type": "integer"
+                        },
+                        "databaseType": {
+                          "type": "string"
+                        },
+                        "creditsUsed": {
+                          "type": "integer",
+                          "description": "Number of credits deducted for net-new leads (credit-plan users only)"
+                        },
+                        "creditsRemaining": {
+                          "type": "integer",
+                          "description": "Remaining credit balance after this export (credit-plan users only)"
+                        },
+                        "maxLeads": {
+                          "type": "integer",
+                          "description": "Echo of maxLeads parameter (only present when maxLeads was specified)"
+                        },
+                        "overflowCount": {
+                          "type": "integer",
+                          "description": "Number of leads stored in the reservoir due to maxLeads cap (only present when maxLeads is specified)"
+                        },
+                        "maxResults": {
+                          "type": "integer",
+                          "description": "Echo of maxResults parameter (only present when maxResults was specified)"
+                        },
+                        "maxCredits": {
+                          "type": "integer",
+                          "description": "Echo of maxCredits parameter (only present when maxCredits was specified)"
+                        }
                       }
                     }
                   }
@@ -431,16 +1104,26 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "402": { "description": "Insufficient credits to complete this export (credit-plan users only)" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "Insufficient credits to complete this export (credit-plan users only)"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/filter-presets": {
       "get": {
-        "tags": ["Filter Presets"],
+        "tags": [
+          "Filter Presets"
+        ],
         "operationId": "listFilterPresets",
         "summary": "List your filter presets",
         "description": "Retrieve all saved filter presets for your account.",
@@ -454,18 +1137,24 @@
                   "properties": {
                     "data": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/FilterPreset" }
+                      "items": {
+                        "$ref": "#/components/schemas/FilterPreset"
+                      }
                     }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       },
       "post": {
-        "tags": ["Filter Presets"],
+        "tags": [
+          "Filter Presets"
+        ],
         "operationId": "createFilterPreset",
         "summary": "Create a filter preset",
         "description": "Save a new reusable filter configuration.",
@@ -473,7 +1162,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/FilterPresetInput" }
+              "schema": {
+                "$ref": "#/components/schemas/FilterPresetInput"
+              }
             }
           }
         },
@@ -485,35 +1176,58 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/FilterPreset" }
+                    "data": {
+                      "$ref": "#/components/schemas/FilterPreset"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/filter-presets/{id}": {
       "delete": {
-        "tags": ["Filter Presets"],
+        "tags": [
+          "Filter Presets"
+        ],
         "operationId": "deleteFilterPreset",
         "summary": "Delete a filter preset",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
-          "200": { "$ref": "#/components/responses/DeleteSuccess" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "$ref": "#/components/responses/DeleteSuccess"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/keyword-lists": {
       "get": {
-        "tags": ["Keyword Lists"],
+        "tags": [
+          "Keyword Lists"
+        ],
         "operationId": "listKeywordLists",
         "summary": "List your keyword lists",
         "description": "Retrieve all saved keyword lists.",
@@ -527,18 +1241,24 @@
                   "properties": {
                     "data": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/KeywordList" }
+                      "items": {
+                        "$ref": "#/components/schemas/KeywordList"
+                      }
                     }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       },
       "post": {
-        "tags": ["Keyword Lists"],
+        "tags": [
+          "Keyword Lists"
+        ],
         "operationId": "createKeywordList",
         "summary": "Create a keyword list",
         "description": "Create a new keyword list with include and exclude keywords.",
@@ -546,7 +1266,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/KeywordListInput" }
+              "schema": {
+                "$ref": "#/components/schemas/KeywordListInput"
+              }
             }
           }
         },
@@ -558,30 +1280,47 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/KeywordList" }
+                    "data": {
+                      "$ref": "#/components/schemas/KeywordList"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/keyword-lists/{id}": {
       "put": {
-        "tags": ["Keyword Lists"],
+        "tags": [
+          "Keyword Lists"
+        ],
         "operationId": "updateKeywordList",
         "summary": "Update a keyword list",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/KeywordListInput" }
+              "schema": {
+                "$ref": "#/components/schemas/KeywordListInput"
+              }
             }
           }
         },
@@ -593,33 +1332,56 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/KeywordList" }
+                    "data": {
+                      "$ref": "#/components/schemas/KeywordList"
+                    }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       },
       "delete": {
-        "tags": ["Keyword Lists"],
+        "tags": [
+          "Keyword Lists"
+        ],
         "operationId": "deleteKeywordList",
         "summary": "Delete a keyword list",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
-          "200": { "$ref": "#/components/responses/DeleteSuccess" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "$ref": "#/components/responses/DeleteSuccess"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/email-schedules": {
       "get": {
-        "tags": ["Email Schedules"],
+        "tags": [
+          "Email Schedules"
+        ],
         "operationId": "listEmailSchedules",
         "summary": "List your email schedules",
         "description": "Retrieve all configured email delivery schedules.",
@@ -633,18 +1395,24 @@
                   "properties": {
                     "data": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/EmailSchedule" }
+                      "items": {
+                        "$ref": "#/components/schemas/EmailSchedule"
+                      }
                     }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       },
       "post": {
-        "tags": ["Email Schedules"],
+        "tags": [
+          "Email Schedules"
+        ],
         "operationId": "createEmailSchedule",
         "summary": "Create an email schedule",
         "description": "Set up automated email delivery of leads matching a filter preset. Requires an active subscription.",
@@ -652,7 +1420,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/EmailScheduleInput" }
+              "schema": {
+                "$ref": "#/components/schemas/EmailScheduleInput"
+              }
             }
           }
         },
@@ -664,32 +1434,51 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/EmailSchedule" }
+                    "data": {
+                      "$ref": "#/components/schemas/EmailSchedule"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/email-schedules/{id}": {
       "patch": {
-        "tags": ["Email Schedules"],
+        "tags": [
+          "Email Schedules"
+        ],
         "operationId": "updateEmailSchedule",
         "summary": "Update an email schedule",
         "description": "Update schedule settings. Only provided fields are updated.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/EmailScheduleUpdate" }
+              "schema": {
+                "$ref": "#/components/schemas/EmailScheduleUpdate"
+              }
             }
           }
         },
@@ -701,34 +1490,59 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/EmailSchedule" }
+                    "data": {
+                      "$ref": "#/components/schemas/EmailSchedule"
+                    }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       },
       "delete": {
-        "tags": ["Email Schedules"],
+        "tags": [
+          "Email Schedules"
+        ],
         "operationId": "deleteEmailSchedule",
         "summary": "Delete an email schedule",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
-          "200": { "$ref": "#/components/responses/DeleteSuccess" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "$ref": "#/components/responses/DeleteSuccess"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/export-formats": {
       "get": {
-        "tags": ["Export Formats"],
+        "tags": [
+          "Export Formats"
+        ],
         "operationId": "listExportFormats",
         "summary": "List your export formats",
         "description": "Retrieve all custom export format templates.",
@@ -742,18 +1556,24 @@
                   "properties": {
                     "data": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/ExportFormat" }
+                      "items": {
+                        "$ref": "#/components/schemas/ExportFormat"
+                      }
                     }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       },
       "post": {
-        "tags": ["Export Formats"],
+        "tags": [
+          "Export Formats"
+        ],
         "operationId": "createExportFormat",
         "summary": "Create an export format",
         "description": "Create a custom export format template with column mapping and file settings.",
@@ -761,7 +1581,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/ExportFormatInput" }
+              "schema": {
+                "$ref": "#/components/schemas/ExportFormatInput"
+              }
             }
           }
         },
@@ -773,24 +1595,39 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/ExportFormat" }
+                    "data": {
+                      "$ref": "#/components/schemas/ExportFormat"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/export-formats/{id}": {
       "get": {
-        "tags": ["Export Formats"],
+        "tags": [
+          "Export Formats"
+        ],
         "operationId": "getExportFormat",
         "summary": "Get an export format",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -800,28 +1637,45 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/ExportFormat" }
+                    "data": {
+                      "$ref": "#/components/schemas/ExportFormat"
+                    }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       },
       "patch": {
-        "tags": ["Export Formats"],
+        "tags": [
+          "Export Formats"
+        ],
         "operationId": "updateExportFormat",
         "summary": "Update an export format",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/ExportFormatUpdate" }
+              "schema": {
+                "$ref": "#/components/schemas/ExportFormatUpdate"
+              }
             }
           }
         },
@@ -833,39 +1687,71 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/ExportFormat" }
+                    "data": {
+                      "$ref": "#/components/schemas/ExportFormat"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       },
       "delete": {
-        "tags": ["Export Formats"],
+        "tags": [
+          "Export Formats"
+        ],
         "operationId": "deleteExportFormat",
         "summary": "Delete an export format",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
-          "200": { "$ref": "#/components/responses/DeleteSuccess" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "$ref": "#/components/responses/DeleteSuccess"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/export-formats/{id}/set-default": {
       "post": {
-        "tags": ["Export Formats"],
+        "tags": [
+          "Export Formats"
+        ],
         "operationId": "setDefaultExportFormat",
         "summary": "Set default export format",
         "description": "Set an export format as your default for all exports.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -878,7 +1764,9 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "message": { "type": "string" }
+                        "message": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -886,19 +1774,33 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/export-history": {
       "get": {
-        "tags": ["Export History"],
+        "tags": [
+          "Export History"
+        ],
         "operationId": "listExportHistory",
         "summary": "List your export history",
         "description": "View past exports with details including date, row count, and filters used.",
         "parameters": [
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 }, "description": "Number of entries to return" }
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            },
+            "description": "Number of entries to return"
+          }
         ],
         "responses": {
           "200": {
@@ -910,42 +1812,76 @@
                   "properties": {
                     "data": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/ExportHistoryEntry" }
+                      "items": {
+                        "$ref": "#/components/schemas/ExportHistoryEntry"
+                      }
                     }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/export-history/{id}/download": {
       "get": {
-        "tags": ["Export History"],
+        "tags": [
+          "Export History"
+        ],
         "operationId": "downloadExport",
         "summary": "Download a previous export",
         "description": "Re-download a previously exported file. Exports expire after 7 days.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "File download",
             "content": {
-              "text/csv": { "schema": { "type": "string", "format": "binary" } },
-              "application/json": { "schema": { "type": "string", "format": "binary" } },
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": { "schema": { "type": "string", "format": "binary" } }
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
           "410": {
             "description": "Export file has expired",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           }
@@ -954,7 +1890,9 @@
     },
     "/settings/database": {
       "get": {
-        "tags": ["Account Settings"],
+        "tags": [
+          "Account Settings"
+        ],
         "operationId": "getDatabaseSettings",
         "summary": "Get database settings",
         "description": "View your current database type and whether you can switch.",
@@ -969,10 +1907,25 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "currentDatabase": { "type": "string", "enum": ["home_improvement", "other"] },
-                        "canSwitch": { "type": "boolean" },
-                        "daysRemaining": { "type": "integer", "description": "Days until switching is allowed again" },
-                        "lastSwitchedAt": { "type": "string", "format": "date-time", "nullable": true }
+                        "currentDatabase": {
+                          "type": "string",
+                          "enum": [
+                            "home_improvement",
+                            "other"
+                          ]
+                        },
+                        "canSwitch": {
+                          "type": "boolean"
+                        },
+                        "daysRemaining": {
+                          "type": "integer",
+                          "description": "Days until switching is allowed again"
+                        },
+                        "lastSwitchedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        }
                       }
                     }
                   }
@@ -980,13 +1933,17 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/settings/switch-database": {
       "post": {
-        "tags": ["Account Settings"],
+        "tags": [
+          "Account Settings"
+        ],
         "operationId": "switchDatabase",
         "summary": "Switch lead database",
         "description": "Switch between 'home_improvement' and 'other' databases. Incompatible email schedules will be automatically paused. Switching has a cooldown period.",
@@ -996,9 +1953,17 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["smbType"],
+                "required": [
+                  "smbType"
+                ],
                 "properties": {
-                  "smbType": { "type": "string", "enum": ["home_improvement", "other"] }
+                  "smbType": {
+                    "type": "string",
+                    "enum": [
+                      "home_improvement",
+                      "other"
+                    ]
+                  }
                 }
               }
             }
@@ -1015,10 +1980,19 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "message": { "type": "string" },
-                        "newDatabase": { "type": "string" },
-                        "switchedAt": { "type": "string", "format": "date-time" },
-                        "pausedSchedules": { "type": "integer" }
+                        "message": {
+                          "type": "string"
+                        },
+                        "newDatabase": {
+                          "type": "string"
+                        },
+                        "switchedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "pausedSchedules": {
+                          "type": "integer"
+                        }
                       }
                     }
                   }
@@ -1026,15 +2000,23 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/ai/suggest-categories": {
       "post": {
-        "tags": ["AI Features"],
+        "tags": [
+          "AI Features"
+        ],
         "operationId": "suggestCategories",
         "summary": "AI category suggestions",
         "description": "Get AI-powered SMB category suggestions based on your company profile. Optionally analyzes your company website for better results. Rate limited to 5 requests per minute.",
@@ -1044,13 +2026,39 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["companyName", "companyDescription", "productService"],
+                "required": [
+                  "companyName",
+                  "companyDescription",
+                  "productService"
+                ],
                 "properties": {
-                  "companyName": { "type": "string", "description": "Your company name", "example": "Acme Business Solutions" },
-                  "companyDescription": { "type": "string", "description": "What your company does", "example": "We provide accounting software and bookkeeping services to small businesses" },
-                  "productService": { "type": "string", "description": "Specific product or service you sell", "example": "Cloud accounting software, payroll services, tax preparation" },
-                  "companyWebsite": { "type": "string", "description": "Your company website URL (optional, used for AI analysis)", "example": "https://acmebusinesssolutions.com" },
-                  "excludeCategories": { "type": "array", "items": { "type": "string" }, "description": "Categories to exclude from suggestions" }
+                  "companyName": {
+                    "type": "string",
+                    "description": "Your company name",
+                    "example": "Acme Business Solutions"
+                  },
+                  "companyDescription": {
+                    "type": "string",
+                    "description": "What your company does",
+                    "example": "We provide accounting software and bookkeeping services to small businesses"
+                  },
+                  "productService": {
+                    "type": "string",
+                    "description": "Specific product or service you sell",
+                    "example": "Cloud accounting software, payroll services, tax preparation"
+                  },
+                  "companyWebsite": {
+                    "type": "string",
+                    "description": "Your company website URL (optional, used for AI analysis)",
+                    "example": "https://acmebusinesssolutions.com"
+                  },
+                  "excludeCategories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Categories to exclude from suggestions"
+                  }
                 }
               }
             }
@@ -1067,8 +2075,16 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "categories": { "type": "array", "items": { "type": "string" }, "description": "Suggested SMB categories" },
-                        "websiteAnalysisFailed": { "type": "boolean" }
+                        "categories": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Suggested SMB categories"
+                        },
+                        "websiteAnalysisFailed": {
+                          "type": "boolean"
+                        }
                       }
                     }
                   }
@@ -1076,18 +2092,26 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/ai/generate-keywords": {
       "post": {
-        "tags": ["AI Features"],
+        "tags": [
+          "AI Features"
+        ],
         "operationId": "generateKeywords",
         "summary": "AI keyword generation",
-        "description": "Trigger AI-powered keyword generation based on your company profile and target categories (up to 3 per list). Keywords are generated as wildcard patterns and saved to keyword lists with auto-refine enabled by default. Runs asynchronously — use /ai/keyword-status to check progress. Rate limited to 5 requests per minute.",
+        "description": "Trigger AI-powered keyword generation based on your company profile and target categories (up to 3 per list). Keywords are generated as wildcard patterns and saved to keyword lists with auto-refine enabled by default. Runs asynchronously - use /ai/keyword-status to check progress. Rate limited to 5 requests per minute.",
         "responses": {
           "200": {
             "description": "Keyword generation started",
@@ -1099,8 +2123,14 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "message": { "type": "string", "example": "Keyword generation started" },
-                        "status": { "type": "string", "example": "pending" }
+                        "message": {
+                          "type": "string",
+                          "example": "Keyword generation started"
+                        },
+                        "status": {
+                          "type": "string",
+                          "example": "pending"
+                        }
                       }
                     }
                   }
@@ -1108,18 +2138,28 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/purchase-credits": {
       "post": {
-        "tags": ["Credits & Subscription"],
+        "tags": [
+          "Credits & Subscription"
+        ],
         "operationId": "purchaseCredits",
         "summary": "Purchase additional permanent credits",
-        "description": "Purchase permanent credits using your saved payment method (Stripe off-session charge). Provide either creditCount (minimum 100) or dollarAmount (minimum $1). When using dollarAmount, credits are calculated from your plan's overage rate and you are charged only for whole credits. Pricing: Starter 10¢, Growth 8¢, Scale 5¢, Platinum 3¢, Enterprise 2¢ per credit.",
-        "security": [{ "BearerAuth": [] }],
+        "description": "Purchase permanent credits using your saved payment method (Stripe off-session charge). Provide either creditCount (minimum 100) or dollarAmount (minimum $1). Maximum per purchase is 5x your plan's monthly allocation (Starter: 2,500, Growth: 10,000, Scale: 50,000). When using dollarAmount, credits are calculated from your plan's overage rate and you are charged only for whole credits. Any fractional cents are rounded down in your favor. Pricing: Starter 10\u00a2, Growth 7.5\u00a2, Scale 5\u00a2, Platinum 3\u00a2, Enterprise 2\u00a2 per credit.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1127,8 +2167,18 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "creditCount": { "type": "integer", "minimum": 100, "description": "Number of credits to purchase (minimum 100). Mutually exclusive with dollarAmount.", "example": 500 },
-                  "dollarAmount": { "type": "number", "minimum": 1, "description": "Dollar amount to spend on credits (minimum $1). Credits are calculated from your plan rate and you are charged for whole credits only. Mutually exclusive with creditCount.", "example": 50 }
+                  "creditCount": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "description": "Number of credits to purchase (min 100, max 5x your plan's monthly credits). Mutually exclusive with dollarAmount.",
+                    "example": 500
+                  },
+                  "dollarAmount": {
+                    "type": "number",
+                    "minimum": 1,
+                    "description": "Dollar amount to spend on credits (minimum $1). Credits are calculated from your plan rate and you are charged for whole credits only. Mutually exclusive with creditCount.",
+                    "example": 50
+                  }
                 }
               }
             }
@@ -1145,13 +2195,27 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "success": { "type": "boolean" },
-                        "creditsAdded": { "type": "integer" },
-                        "totalPermanentCredits": { "type": "integer" },
-                        "amountCharged": { "type": "string" },
-                        "amountChargedCents": { "type": "integer" },
-                        "pricePerCredit": { "type": "string" },
-                        "stripePaymentIntentId": { "type": "string" }
+                        "success": {
+                          "type": "boolean"
+                        },
+                        "creditsAdded": {
+                          "type": "integer"
+                        },
+                        "totalPermanentCredits": {
+                          "type": "integer"
+                        },
+                        "amountCharged": {
+                          "type": "string"
+                        },
+                        "amountChargedCents": {
+                          "type": "integer"
+                        },
+                        "pricePerCredit": {
+                          "type": "string"
+                        },
+                        "stripePaymentIntentId": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -1159,20 +2223,276 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "description": "Not on an active credit plan" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not on an active credit plan"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/auto-top-up": {
+      "get": {
+        "tags": [
+          "Credits & Subscription"
+        ],
+        "operationId": "getAutoTopUp",
+        "summary": "Get auto top-up configuration",
+        "description": "Get your auto top-up configuration including trigger threshold, purchase amount, monthly spending cap, and current month's usage.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Auto top-up configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "triggerType": {
+                          "type": "string",
+                          "enum": [
+                            "credits",
+                            "dollars"
+                          ],
+                          "nullable": true
+                        },
+                        "triggerAmount": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "purchaseType": {
+                          "type": "string",
+                          "enum": [
+                            "credits",
+                            "dollars"
+                          ],
+                          "nullable": true
+                        },
+                        "purchaseAmount": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "capType": {
+                          "type": "string",
+                          "enum": [
+                            "credits",
+                            "dollars"
+                          ],
+                          "nullable": true
+                        },
+                        "capAmount": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "capUsedCredits": {
+                          "type": "integer"
+                        },
+                        "capUsedCents": {
+                          "type": "integer"
+                        },
+                        "pricePerCreditCents": {
+                          "type": "integer",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not on an active credit plan"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Credits & Subscription"
+        ],
+        "operationId": "updateAutoTopUp",
+        "summary": "Configure auto top-up",
+        "description": "Configure automatic credit purchases. When enabled, credits are purchased automatically when your permanent credit balance falls below the trigger threshold. Supports trigger by credits or dollars, purchase by credits or dollars, and an optional monthly spending cap.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Enable or disable auto top-up"
+                  },
+                  "triggerType": {
+                    "type": "string",
+                    "enum": [
+                      "credits",
+                      "dollars"
+                    ],
+                    "description": "What the trigger threshold measures"
+                  },
+                  "triggerAmount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Threshold value that triggers a purchase"
+                  },
+                  "purchaseType": {
+                    "type": "string",
+                    "enum": [
+                      "credits",
+                      "dollars"
+                    ],
+                    "description": "Whether to buy by credit count or dollar amount"
+                  },
+                  "purchaseAmount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Amount to purchase (min 100 credits or $1)"
+                  },
+                  "capType": {
+                    "type": "string",
+                    "enum": [
+                      "credits",
+                      "dollars"
+                    ],
+                    "nullable": true,
+                    "description": "Monthly cap type, or null to disable"
+                  },
+                  "capAmount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "nullable": true,
+                    "description": "Monthly cap value"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Auto top-up configuration updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "triggerType": {
+                          "type": "string",
+                          "enum": [
+                            "credits",
+                            "dollars"
+                          ],
+                          "nullable": true
+                        },
+                        "triggerAmount": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "purchaseType": {
+                          "type": "string",
+                          "enum": [
+                            "credits",
+                            "dollars"
+                          ],
+                          "nullable": true
+                        },
+                        "purchaseAmount": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "capType": {
+                          "type": "string",
+                          "enum": [
+                            "credits",
+                            "dollars"
+                          ],
+                          "nullable": true
+                        },
+                        "capAmount": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "capUsedCredits": {
+                          "type": "integer"
+                        },
+                        "capUsedCents": {
+                          "type": "integer"
+                        },
+                        "pricePerCreditCents": {
+                          "type": "integer",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not on an active credit plan"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/subscription/cancel": {
       "post": {
-        "tags": ["Credits & Subscription"],
+        "tags": [
+          "Credits & Subscription"
+        ],
         "operationId": "cancelSubscription",
         "summary": "Cancel subscription",
         "description": "Cancel your subscription at the end of the current billing period. Your access continues until the period ends.",
-        "security": [{ "BearerAuth": [] }],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Subscription cancellation scheduled",
@@ -1184,10 +2504,18 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "message": { "type": "string" },
-                        "cancelAtPeriodEnd": { "type": "boolean" },
-                        "currentPeriodEnd": { "type": "integer" },
-                        "status": { "type": "string" }
+                        "message": {
+                          "type": "string"
+                        },
+                        "cancelAtPeriodEnd": {
+                          "type": "boolean"
+                        },
+                        "currentPeriodEnd": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -1195,30 +2523,48 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "description": "No active subscription found" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No active subscription found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/subscription/change-plan": {
       "post": {
-        "tags": ["Credits & Subscription"],
+        "tags": [
+          "Credits & Subscription"
+        ],
         "operationId": "changePlan",
         "summary": "Change subscription plan",
         "description": "Upgrade or downgrade your subscription plan. Available target plans: starter, growth, scale. On upgrade, unused monthly credits are automatically converted to permanent credits (capped at current plan's standard allocation). Card on file is charged the prorated difference for upgrades; downgrades take effect at renewal.",
-        "security": [{ "BearerAuth": [] }],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["targetPlan"],
+                "required": [
+                  "targetPlan"
+                ],
                 "properties": {
                   "targetPlan": {
                     "type": "string",
-                    "enum": ["starter", "growth", "scale"],
+                    "enum": [
+                      "starter",
+                      "growth",
+                      "scale"
+                    ],
                     "description": "The plan to switch to"
                   }
                 }
@@ -1237,12 +2583,30 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "message": { "type": "string" },
-                        "changeType": { "type": "string", "enum": ["upgrade", "downgrade"] },
-                        "previousPlan": { "type": "string" },
-                        "newPlan": { "type": "string" },
-                        "newMonthlyCredits": { "type": "integer", "description": "Only present on upgrades" },
-                        "permanentCreditsAdded": { "type": "integer", "description": "Only present on upgrades" }
+                        "message": {
+                          "type": "string"
+                        },
+                        "changeType": {
+                          "type": "string",
+                          "enum": [
+                            "upgrade",
+                            "downgrade"
+                          ]
+                        },
+                        "previousPlan": {
+                          "type": "string"
+                        },
+                        "newPlan": {
+                          "type": "string"
+                        },
+                        "newMonthlyCredits": {
+                          "type": "integer",
+                          "description": "Only present on upgrades"
+                        },
+                        "permanentCreditsAdded": {
+                          "type": "integer",
+                          "description": "Only present on upgrades"
+                        }
                       }
                     }
                   }
@@ -1250,16 +2614,26 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "description": "No active subscription found" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No active subscription found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/export-blacklist": {
       "get": {
-        "tags": ["Export Blacklist"],
+        "tags": [
+          "Export Blacklist"
+        ],
         "operationId": "listExportBlacklist",
         "summary": "List blacklisted entries",
         "description": "Retrieve all leads/domains on your export blacklist.",
@@ -1273,18 +2647,24 @@
                   "properties": {
                     "data": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/BlacklistEntry" }
+                      "items": {
+                        "$ref": "#/components/schemas/BlacklistEntry"
+                      }
                     }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       },
       "post": {
-        "tags": ["Export Blacklist"],
+        "tags": [
+          "Export Blacklist"
+        ],
         "operationId": "addToBlacklist",
         "summary": "Add to blacklist",
         "description": "Add a lead or domain to your export blacklist. Supports single entries or batch adding via the 'entries' array.",
@@ -1294,13 +2674,17 @@
             "application/json": {
               "schema": {
                 "oneOf": [
-                  { "$ref": "#/components/schemas/BlacklistEntryInput" },
+                  {
+                    "$ref": "#/components/schemas/BlacklistEntryInput"
+                  },
                   {
                     "type": "object",
                     "properties": {
                       "entries": {
                         "type": "array",
-                        "items": { "$ref": "#/components/schemas/BlacklistEntryInput" }
+                        "items": {
+                          "$ref": "#/components/schemas/BlacklistEntryInput"
+                        }
                       }
                     }
                   }
@@ -1317,40 +2701,71 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "$ref": "#/components/schemas/BlacklistEntry" }
+                    "data": {
+                      "$ref": "#/components/schemas/BlacklistEntry"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/export-blacklist/{id}": {
       "delete": {
-        "tags": ["Export Blacklist"],
+        "tags": [
+          "Export Blacklist"
+        ],
         "operationId": "removeFromBlacklist",
         "summary": "Remove from blacklist",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
-          "200": { "$ref": "#/components/responses/DeleteSuccess" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "$ref": "#/components/responses/DeleteSuccess"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/ai/auto-refine/status": {
       "get": {
-        "tags": ["AI Features"],
+        "tags": [
+          "AI Features"
+        ],
         "operationId": "getAutoRefineStatus",
         "summary": "Get auto-refine status",
         "description": "Get auto-refine status for keyword lists. Optionally filter by a specific list ID. Returns refinement progress, quality scores per round, timing, and paired list information. The auto-refine system uses a single-pass 4-phase process: Phase 1 validates each positive keyword individually (50% threshold, up to 2 variation attempts), Phase 1B discovers up to 15 new positives (5-added target), Phase 2 checks negative keyword collateral damage (40% threshold), Phase 2B discovers up to 5 new negatives. High-volume keywords use multi-sample scoring (3x50 leads, median). Final quality score (1-10) determines if retry pass needed.",
         "parameters": [
-          { "name": "listId", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Filter by specific keyword list ID" }
+          {
+            "name": "listId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Filter by specific keyword list ID"
+          }
         ],
         "responses": {
           "200": {
@@ -1365,7 +2780,9 @@
                         {
                           "type": "array",
                           "description": "Array of all keyword lists with refine info (when no listId specified)",
-                          "items": { "$ref": "#/components/schemas/AutoRefineStatus" }
+                          "items": {
+                            "$ref": "#/components/schemas/AutoRefineStatus"
+                          }
                         },
                         {
                           "$ref": "#/components/schemas/AutoRefineStatus",
@@ -1378,14 +2795,20 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "description": "Keyword list not found (when listId specified)" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Keyword list not found (when listId specified)"
+          }
         }
       }
     },
     "/ai/auto-refine/enable": {
       "post": {
-        "tags": ["AI Features"],
+        "tags": [
+          "AI Features"
+        ],
         "operationId": "enableAutoRefine",
         "summary": "Enable AI auto-refine",
         "description": "Enable AI auto-refine for a keyword list and start the single-pass 4-phase optimization process. Phase 1 validates each positive keyword individually (50% applicability threshold) with up to 2 variation attempts (3 candidates each). Phase 1B discovers up to 15 new positive keywords in a single AI call, testing all concurrently (5-added target based on incremental lead contribution). Phase 2 checks each negative keyword for collateral damage (40% threshold) with the same variation strategy. Phase 2B samples ~80 leads and discovers up to 5 new negative keywords. High-volume keywords use multi-sample scoring (3x50 leads, median). Final quality score (1-10, median of 3) determines if retry needed (score <=5). Auto-refine turns off when complete. Each list uses its sourceCategories (max 3) for accurate AI scoring. Rate limited to 5 requests per minute.",
@@ -1395,9 +2818,14 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["listId"],
+                "required": [
+                  "listId"
+                ],
                 "properties": {
-                  "listId": { "type": "integer", "description": "Keyword list ID to enable auto-refine for" }
+                  "listId": {
+                    "type": "integer",
+                    "description": "Keyword list ID to enable auto-refine for"
+                  }
                 }
               }
             }
@@ -1414,10 +2842,18 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "message": { "type": "string" },
-                        "listId": { "type": "integer" },
-                        "autoRefineEnabled": { "type": "boolean" },
-                        "refinementStatus": { "type": "string" }
+                        "message": {
+                          "type": "string"
+                        },
+                        "listId": {
+                          "type": "integer"
+                        },
+                        "autoRefineEnabled": {
+                          "type": "boolean"
+                        },
+                        "refinementStatus": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -1425,15 +2861,23 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/ai/auto-refine/disable": {
       "post": {
-        "tags": ["AI Features"],
+        "tags": [
+          "AI Features"
+        ],
         "operationId": "disableAutoRefine",
         "summary": "Disable AI auto-refine",
         "description": "Disable AI auto-refine for a keyword list. Pauses any in-progress refinement and stops future optimization runs. Rate limited to 60 requests per minute.",
@@ -1443,9 +2887,14 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["listId"],
+                "required": [
+                  "listId"
+                ],
                 "properties": {
-                  "listId": { "type": "integer", "description": "Keyword list ID to disable auto-refine for" }
+                  "listId": {
+                    "type": "integer",
+                    "description": "Keyword list ID to disable auto-refine for"
+                  }
                 }
               }
             }
@@ -1462,10 +2911,18 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "message": { "type": "string" },
-                        "listId": { "type": "integer" },
-                        "autoRefineEnabled": { "type": "boolean" },
-                        "refinementStatus": { "type": "string" }
+                        "message": {
+                          "type": "string"
+                        },
+                        "listId": {
+                          "type": "integer"
+                        },
+                        "autoRefineEnabled": {
+                          "type": "boolean"
+                        },
+                        "refinementStatus": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -1473,14 +2930,20 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/ai/keyword-status": {
       "get": {
-        "tags": ["AI Features"],
+        "tags": [
+          "AI Features"
+        ],
         "operationId": "getKeywordStatus",
         "summary": "Check keyword generation job status",
         "description": "Check the status of keyword generation jobs. Rate limited to 60 requests per minute.",
@@ -1495,19 +2958,38 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "hasJobs": { "type": "boolean" },
+                        "hasJobs": {
+                          "type": "boolean"
+                        },
                         "jobs": {
                           "type": "array",
                           "items": {
                             "type": "object",
                             "properties": {
-                              "id": { "type": "integer" },
-                              "status": { "type": "string" },
-                              "refinementStatus": { "type": "string" },
-                              "currentRound": { "type": "integer" },
-                              "maxRounds": { "type": "integer" },
-                              "createdAt": { "type": "string", "format": "date-time" },
-                              "lastRefinedAt": { "type": "string", "format": "date-time", "nullable": true }
+                              "id": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "refinementStatus": {
+                                "type": "string"
+                              },
+                              "currentRound": {
+                                "type": "integer"
+                              },
+                              "maxRounds": {
+                                "type": "integer"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "lastRefinedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "nullable": true
+                              }
                             }
                           }
                         }
@@ -1518,18 +3000,29 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/email-schedules/{id}/trigger": {
       "post": {
-        "tags": ["Email Schedules"],
+        "tags": [
+          "Email Schedules"
+        ],
         "operationId": "triggerEmailSchedule",
         "summary": "Manually trigger an email schedule",
         "description": "Manually trigger an active email schedule to send immediately. Rate limited to 1 request per 5 minutes.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -1542,8 +3035,12 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "message": { "type": "string" },
-                        "scheduleId": { "type": "integer" }
+                        "message": {
+                          "type": "string"
+                        },
+                        "scheduleId": {
+                          "type": "integer"
+                        }
                       }
                     }
                   }
@@ -1551,9 +3048,15 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     }
@@ -1570,275 +3073,951 @@
       "AutoRefineStatus": {
         "type": "object",
         "properties": {
-          "listId": { "type": "integer", "description": "Keyword list ID" },
-          "name": { "type": "string", "description": "Keyword list name" },
-          "type": { "type": "string", "enum": ["positive", "negative"], "description": "Keyword list type" },
-          "autoRefineEnabled": { "type": "boolean", "description": "Whether auto-refine is enabled" },
-          "refinementStatus": { "type": "string", "enum": ["running", "paused", "completed", "failed"], "nullable": true, "description": "Current refinement status" },
-          "currentRound": { "type": "integer", "description": "Current refinement round (0 if not started)" },
-          "maxRounds": { "type": "integer", "description": "Maximum number of refinement rounds (default 10)" },
+          "listId": {
+            "type": "integer",
+            "description": "Keyword list ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Keyword list name"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative"
+            ],
+            "description": "Keyword list type"
+          },
+          "autoRefineEnabled": {
+            "type": "boolean",
+            "description": "Whether auto-refine is enabled"
+          },
+          "refinementStatus": {
+            "type": "string",
+            "enum": [
+              "running",
+              "paused",
+              "completed",
+              "failed"
+            ],
+            "nullable": true,
+            "description": "Current refinement status"
+          },
+          "currentRound": {
+            "type": "integer",
+            "description": "Current refinement round (0 if not started)"
+          },
+          "maxRounds": {
+            "type": "integer",
+            "description": "Maximum number of refinement rounds (default 10)"
+          },
           "scoresPerRound": {
             "type": "array",
-            "description": "Quality scores from each completed round. Uses multi-sample scoring (3×50 leads, median) for high-volume keywords.",
+            "description": "Quality scores from each completed round. Uses multi-sample scoring (3\u00d750 leads, median) for high-volume keywords.",
             "items": {
               "type": "object",
               "properties": {
-                "round": { "type": "integer", "description": "Round number" },
-                "score": { "type": "number", "description": "Quality score (1-10)" },
-                "reasoning": { "type": "string", "description": "Explanation of the score, e.g. 'Median of [6, 7, 5]'" }
+                "round": {
+                  "type": "integer",
+                  "description": "Round number"
+                },
+                "score": {
+                  "type": "number",
+                  "description": "Quality score (1-10)"
+                },
+                "reasoning": {
+                  "type": "string",
+                  "description": "Explanation of the score, e.g. 'Median of [6, 7, 5]'"
+                }
               }
             }
           },
-          "lastRefinedAt": { "type": "string", "format": "date-time", "nullable": true, "description": "ISO timestamp of last refinement run" },
-          "pairedListId": { "type": "integer", "nullable": true, "description": "ID of the paired positive/negative keyword list (refined together)" }
+          "lastRefinedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO timestamp of last refinement run"
+          },
+          "pairedListId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "ID of the paired positive/negative keyword list (refined together)"
+          }
         }
       },
       "UserProfile": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "email": { "type": "string", "format": "email" },
-          "firstName": { "type": "string", "nullable": true },
-          "lastName": { "type": "string", "nullable": true },
-          "companyName": { "type": "string", "nullable": true },
-          "companyWebsite": { "type": "string", "nullable": true },
-          "smbType": { "type": "string", "enum": ["home_improvement", "other"] },
-          "subscriptionPlan": { "type": "string", "enum": ["free", "starter", "growth", "scale", "platinum", "enterprise"] },
-          "subscriptionStatus": { "type": "string", "nullable": true },
-          "isSubscribed": { "type": "boolean" },
-          "freeLeadsUsed": { "type": "integer" },
-          "onboardingCompleted": { "type": "boolean" },
-          "targetCategories": { "type": "array", "items": { "type": "string" }, "nullable": true },
-          "targetLocations": { "type": "array", "items": { "type": "string" }, "nullable": true }
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "companyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "companyWebsite": {
+            "type": "string",
+            "nullable": true
+          },
+          "smbType": {
+            "type": "string",
+            "enum": [
+              "home_improvement",
+              "other"
+            ]
+          },
+          "subscriptionPlan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "starter",
+              "growth",
+              "scale",
+              "platinum",
+              "enterprise"
+            ]
+          },
+          "subscriptionStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "isSubscribed": {
+            "type": "boolean"
+          },
+          "freeLeadsUsed": {
+            "type": "integer"
+          },
+          "onboardingCompleted": {
+            "type": "boolean"
+          },
+          "targetCategories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "targetLocations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "monthlyCredits": {
+            "type": "integer",
+            "description": "Total monthly credit allocation for the current billing period"
+          },
+          "monthlyCreditsUsed": {
+            "type": "integer",
+            "description": "Monthly credits consumed in the current billing period"
+          },
+          "monthlyCreditsRemaining": {
+            "type": "integer",
+            "description": "Monthly credits remaining in the current billing period"
+          },
+          "permanentCredits": {
+            "type": "integer",
+            "description": "Permanent (purchased) credits that do not expire"
+          },
+          "totalCreditsRemaining": {
+            "type": "integer",
+            "description": "Total credits available (monthly remaining + permanent)"
+          },
+          "creditOverageRate": {
+            "type": "number",
+            "description": "Cost per credit if overage charges apply"
+          }
         }
       },
       "UserProfileBasic": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "email": { "type": "string" },
-          "firstName": { "type": "string", "nullable": true },
-          "lastName": { "type": "string", "nullable": true },
-          "companyName": { "type": "string", "nullable": true },
-          "companyWebsite": { "type": "string", "nullable": true }
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "companyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "companyWebsite": {
+            "type": "string",
+            "nullable": true
+          }
         }
       },
       "Lead": {
         "type": "object",
         "description": "Lead data. Fields vary by database type. Home Improvement database provides phone numbers as contact info. Other database provides both phone numbers and email addresses.",
         "properties": {
-          "id": { "type": "integer" },
-          "companyName": { "type": "string", "nullable": true, "description": "Business name" },
-          "state": { "type": "string", "nullable": true },
-          "city": { "type": "string", "nullable": true },
-          "zip": { "type": "string", "nullable": true },
-          "phone": { "type": "string", "nullable": true, "description": "Primary phone (masked for free users)" },
-          "email": { "type": "string", "nullable": true, "description": "Primary email (masked for free users)" },
-          "categories": { "type": "string", "nullable": true, "description": "Business categories" },
-          "lastUpdated": { "type": "string", "nullable": true, "description": "Date the lead record was last updated. For Home Improvement leads, this means a new phone number was detected. For Other leads, this means any of the 5 contact/address fields changed: primary phone, secondary phone, primary email, secondary email, or full address. Also includes newly added records. This is the primary way to identify the freshest, most actionable leads — many businesses launch a website before adding their phone number or email, so the Last Updated date captures when that contact information first becomes available." }
+          "id": {
+            "type": "integer"
+          },
+          "companyName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Business name"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "zip": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "description": "Primary phone (masked for free users)"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "description": "Primary email (masked for free users)"
+          },
+          "categories": {
+            "type": "string",
+            "nullable": true,
+            "description": "Business categories"
+          },
+          "lastUpdated": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date the lead record was last updated. For Home Improvement leads, this means a new phone number was detected. For Other leads, this means any of the 5 contact/address fields changed: primary phone, secondary phone, primary email, secondary email, or full address. Also includes newly added records. This is the primary way to identify the freshest, most actionable leads - many businesses launch a website before adding their phone number or email, so the Last Updated date captures when that contact information first becomes available."
+          }
         }
       },
       "FilterPreset": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "filters": { "type": "object", "description": "Saved filter configuration" },
-          "databaseType": { "type": "string", "enum": ["home_improvement", "other"] },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "object",
+            "description": "Saved filter configuration"
+          },
+          "databaseType": {
+            "type": "string",
+            "enum": [
+              "home_improvement",
+              "other"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "FilterPresetInput": {
         "type": "object",
-        "required": ["name", "filters"],
+        "required": [
+          "name",
+          "filters"
+        ],
         "properties": {
-          "name": { "type": "string", "description": "Preset name" },
-          "filters": { "type": "object", "description": "Filter configuration to save" },
-          "databaseType": { "type": "string", "enum": ["home_improvement", "other"] }
+          "name": {
+            "type": "string",
+            "description": "Preset name"
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filter configuration to save"
+          },
+          "databaseType": {
+            "type": "string",
+            "enum": [
+              "home_improvement",
+              "other"
+            ]
+          }
         }
       },
       "KeywordList": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "type": { "type": "string", "enum": ["positive", "negative"], "description": "Whether this list contains include or exclude keywords" },
-          "keywords": { "type": "array", "items": { "type": "string" }, "description": "Keyword patterns (wildcards supported, e.g. *dentist*)" },
-          "sourceCategories": { "type": "array", "items": { "type": "string" }, "description": "Target categories this list was generated for (max 3 per list for optimal AI quality)", "maxItems": 3 },
-          "autoRefineEnabled": { "type": "boolean", "description": "Whether AI auto-refine is active for this list" },
-          "refinementStatus": { "type": "string", "nullable": true, "enum": ["running", "completed", "paused", null], "description": "Current refinement status" },
-          "pairedListId": { "type": "integer", "nullable": true, "description": "ID of the paired positive/negative list (auto-refine manages both together)" },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative"
+            ],
+            "description": "Whether this list contains include or exclude keywords"
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Keyword patterns (wildcards supported, e.g. *dentist*)"
+          },
+          "sourceCategories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Target categories this list was generated for (max 3 per list for optimal AI quality)",
+            "maxItems": 3
+          },
+          "autoRefineEnabled": {
+            "type": "boolean",
+            "description": "Whether AI auto-refine is active for this list"
+          },
+          "refinementStatus": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "running",
+              "completed",
+              "paused",
+              null
+            ],
+            "description": "Current refinement status"
+          },
+          "pairedListId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "ID of the paired positive/negative list (auto-refine manages both together)"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "KeywordListInput": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "keywords": { "type": "array", "items": { "type": "string" } },
-          "negativeKeywords": { "type": "array", "items": { "type": "string" } },
-          "sourceCategories": { "type": "array", "items": { "type": "string" }, "description": "Target categories (max 3 per list for best keyword quality)", "maxItems": 3 }
+          "name": {
+            "type": "string"
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "negativeKeywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sourceCategories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Target categories (max 3 per list for best keyword quality)",
+            "maxItems": 3
+          }
         }
       },
       "EmailSchedule": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "filterPresetId": { "type": "integer" },
-          "exportFormatId": { "type": "integer", "nullable": true },
-          "intervalValue": { "type": "integer" },
-          "intervalUnit": { "type": "string", "enum": ["hours", "days"] },
-          "isActive": { "type": "boolean" },
-          "recipients": { "type": "array", "items": { "type": "string" } },
-          "distributionMode": { "type": "string", "enum": ["full_copy", "split_evenly"], "description": "How leads are distributed among recipients" },
-          "fullCopyRecipients": { "type": "array", "items": { "type": "string", "format": "email" }, "description": "Recipients who receive the full lead list when distributionMode is split_evenly" },
-          "maxLeadsPerEmail": { "type": "integer", "nullable": true, "minimum": 1, "description": "Maximum leads per email delivery. Overflow stored in lead reservoir. Null = no cap." },
-          "lastSentAt": { "type": "string", "format": "date-time", "nullable": true },
-          "totalSentCount": { "type": "integer" },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "filterPresetId": {
+            "type": "integer"
+          },
+          "exportFormatId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "intervalValue": {
+            "type": "integer"
+          },
+          "intervalUnit": {
+            "type": "string",
+            "enum": [
+              "hours",
+              "days"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "distributionMode": {
+            "type": "string",
+            "enum": [
+              "full_copy",
+              "split_evenly"
+            ],
+            "description": "How leads are distributed among recipients"
+          },
+          "fullCopyRecipients": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "description": "Recipients who receive the full lead list when distributionMode is split_evenly"
+          },
+          "maxLeadsPerEmail": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "description": "Maximum leads per email delivery. Overflow stored in lead reservoir. Null = no cap."
+          },
+          "lastSentAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "totalSentCount": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "EmailScheduleInput": {
         "type": "object",
-        "required": ["name", "filterPresetId", "intervalValue", "intervalUnit", "recipients"],
+        "required": [
+          "name",
+          "filterPresetId",
+          "intervalValue",
+          "intervalUnit",
+          "recipients"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "filterPresetId": { "type": "integer", "description": "ID of the filter preset to use" },
-          "exportFormatId": { "type": "integer", "nullable": true, "description": "ID of export format (optional)" },
-          "intervalValue": { "type": "integer", "minimum": 1, "description": "Delivery interval value" },
-          "intervalUnit": { "type": "string", "enum": ["hours", "days"], "description": "Delivery interval unit" },
-          "recipients": { "type": "array", "items": { "type": "string", "format": "email" }, "minItems": 1, "maxItems": 50, "description": "Email recipients (at least 1 required)" },
-          "distributionMode": { "type": "string", "enum": ["full_copy", "split_evenly"], "default": "full_copy", "description": "full_copy sends all leads to every recipient; split_evenly divides leads evenly among recipients" },
-          "fullCopyRecipients": { "type": "array", "items": { "type": "string", "format": "email" }, "maxItems": 50, "description": "Optional recipients who receive the full lead list when distributionMode is split_evenly (e.g. managers)" },
-          "combinedFileEnabled": { "type": "boolean", "default": false },
-          "combinedRecipients": { "type": "array", "items": { "type": "string", "format": "email" }, "maxItems": 50 },
-          "combinedIncludeAssignee": { "type": "boolean", "default": true },
-          "combinedIncludeFileName": { "type": "boolean", "default": true },
-          "combinedColumnPosition": { "type": "string", "enum": ["beginning", "end"], "default": "end" },
-          "combinedAssigneeColumnName": { "type": "string", "maxLength": 50, "default": "Assigned To" },
-          "combinedFileNameColumnName": { "type": "string", "maxLength": 50, "default": "File Part" },
-          "maxLeadsPerEmail": { "type": "integer", "nullable": true, "minimum": 1, "description": "Maximum leads per email delivery. Overflow stored in lead reservoir. Null = no cap." }
+          "name": {
+            "type": "string"
+          },
+          "filterPresetId": {
+            "type": "integer",
+            "description": "ID of the filter preset to use"
+          },
+          "exportFormatId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "ID of export format (optional)"
+          },
+          "intervalValue": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Delivery interval value"
+          },
+          "intervalUnit": {
+            "type": "string",
+            "enum": [
+              "hours",
+              "days"
+            ],
+            "description": "Delivery interval unit"
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Email recipients (at least 1 required)"
+          },
+          "distributionMode": {
+            "type": "string",
+            "enum": [
+              "full_copy",
+              "split_evenly"
+            ],
+            "default": "full_copy",
+            "description": "full_copy sends all leads to every recipient; split_evenly divides leads evenly among recipients"
+          },
+          "fullCopyRecipients": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "maxItems": 50,
+            "description": "Optional recipients who receive the full lead list when distributionMode is split_evenly (e.g. managers)"
+          },
+          "combinedFileEnabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "combinedRecipients": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "maxItems": 50
+          },
+          "combinedIncludeAssignee": {
+            "type": "boolean",
+            "default": true
+          },
+          "combinedIncludeFileName": {
+            "type": "boolean",
+            "default": true
+          },
+          "combinedColumnPosition": {
+            "type": "string",
+            "enum": [
+              "beginning",
+              "end"
+            ],
+            "default": "end"
+          },
+          "combinedAssigneeColumnName": {
+            "type": "string",
+            "maxLength": 50,
+            "default": "Assigned To"
+          },
+          "combinedFileNameColumnName": {
+            "type": "string",
+            "maxLength": 50,
+            "default": "File Part"
+          },
+          "maxLeadsPerEmail": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "description": "Maximum leads per email delivery. Overflow stored in lead reservoir. Null = no cap."
+          }
         }
       },
       "EmailScheduleUpdate": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "isActive": { "type": "boolean" },
-          "intervalValue": { "type": "integer", "minimum": 1 },
-          "intervalUnit": { "type": "string", "enum": ["hours", "days"] },
-          "filterPresetId": { "type": "integer" },
-          "exportFormatId": { "type": "integer", "nullable": true },
-          "recipients": { "type": "array", "items": { "type": "string" }, "maxItems": 50 },
-          "distributionMode": { "type": "string", "enum": ["full_copy", "split_evenly"], "description": "full_copy sends all leads to every recipient; split_evenly divides leads evenly among recipients" },
-          "fullCopyRecipients": { "type": "array", "items": { "type": "string", "format": "email" }, "maxItems": 50, "description": "Recipients who receive the full lead list when distributionMode is split_evenly" },
-          "combinedFileEnabled": { "type": "boolean" },
-          "combinedRecipients": { "type": "array", "items": { "type": "string" }, "maxItems": 50 },
-          "combinedIncludeAssignee": { "type": "boolean" },
-          "combinedIncludeFileName": { "type": "boolean" },
-          "combinedColumnPosition": { "type": "string", "enum": ["beginning", "end"] },
-          "combinedAssigneeColumnName": { "type": "string", "maxLength": 50 },
-          "combinedFileNameColumnName": { "type": "string", "maxLength": 50 },
-          "maxLeadsPerEmail": { "type": "integer", "nullable": true, "minimum": 1, "description": "Maximum leads per email delivery. Overflow stored in lead reservoir. Null = no cap." }
+          "name": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "intervalValue": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "intervalUnit": {
+            "type": "string",
+            "enum": [
+              "hours",
+              "days"
+            ]
+          },
+          "filterPresetId": {
+            "type": "integer"
+          },
+          "exportFormatId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "distributionMode": {
+            "type": "string",
+            "enum": [
+              "full_copy",
+              "split_evenly"
+            ],
+            "description": "full_copy sends all leads to every recipient; split_evenly divides leads evenly among recipients"
+          },
+          "fullCopyRecipients": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "maxItems": 50,
+            "description": "Recipients who receive the full lead list when distributionMode is split_evenly"
+          },
+          "combinedFileEnabled": {
+            "type": "boolean"
+          },
+          "combinedRecipients": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "combinedIncludeAssignee": {
+            "type": "boolean"
+          },
+          "combinedIncludeFileName": {
+            "type": "boolean"
+          },
+          "combinedColumnPosition": {
+            "type": "string",
+            "enum": [
+              "beginning",
+              "end"
+            ]
+          },
+          "combinedAssigneeColumnName": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "combinedFileNameColumnName": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "maxLeadsPerEmail": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "description": "Maximum leads per email delivery. Overflow stored in lead reservoir. Null = no cap."
+          }
         }
       },
       "ExportFormat": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "fileType": { "type": "string", "enum": ["csv", "json", "xlsx"] },
-          "startRow": { "type": "integer" },
-          "fieldMappings": { "type": "array", "items": { "$ref": "#/components/schemas/FieldMapping" } },
-          "isDefault": { "type": "boolean" },
-          "splitFiles": { "type": "boolean" },
-          "splitMode": { "type": "string", "enum": ["max_rows", "equal_parts", "parts_max_rows"] },
-          "maxRowsPerFile": { "type": "integer", "nullable": true },
-          "numberOfParts": { "type": "integer", "nullable": true },
-          "includeTotal": { "type": "boolean" },
-          "includeHeaders": { "type": "boolean" },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "fileType": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "json",
+              "xlsx"
+            ]
+          },
+          "startRow": {
+            "type": "integer"
+          },
+          "fieldMappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldMapping"
+            }
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "splitFiles": {
+            "type": "boolean"
+          },
+          "splitMode": {
+            "type": "string",
+            "enum": [
+              "max_rows",
+              "equal_parts",
+              "parts_max_rows"
+            ]
+          },
+          "maxRowsPerFile": {
+            "type": "integer",
+            "nullable": true
+          },
+          "numberOfParts": {
+            "type": "integer",
+            "nullable": true
+          },
+          "includeTotal": {
+            "type": "boolean"
+          },
+          "includeHeaders": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "ExportFormatInput": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string", "maxLength": 100 },
-          "fileType": { "type": "string", "enum": ["csv", "json", "xlsx"], "default": "csv" },
-          "startRow": { "type": "integer", "minimum": 1, "maximum": 100, "default": 1 },
-          "fieldMappings": { "type": "array", "items": { "$ref": "#/components/schemas/FieldMapping" } },
-          "maxRowsPerFile": { "type": "integer", "minimum": 10, "maximum": 100000, "nullable": true },
-          "splitFiles": { "type": "boolean", "default": false },
-          "splitMode": { "type": "string", "enum": ["max_rows", "equal_parts", "parts_max_rows"] },
-          "numberOfParts": { "type": "integer", "minimum": 2, "maximum": 100, "nullable": true },
-          "includeTotal": { "type": "boolean", "default": false },
-          "includeHeaders": { "type": "boolean", "default": true }
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "fileType": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "json",
+              "xlsx"
+            ],
+            "default": "csv"
+          },
+          "startRow": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 1
+          },
+          "fieldMappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldMapping"
+            }
+          },
+          "maxRowsPerFile": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 100000,
+            "nullable": true
+          },
+          "splitFiles": {
+            "type": "boolean",
+            "default": false
+          },
+          "splitMode": {
+            "type": "string",
+            "enum": [
+              "max_rows",
+              "equal_parts",
+              "parts_max_rows"
+            ]
+          },
+          "numberOfParts": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 100,
+            "nullable": true
+          },
+          "includeTotal": {
+            "type": "boolean",
+            "default": false
+          },
+          "includeHeaders": {
+            "type": "boolean",
+            "default": true
+          }
         }
       },
       "ExportFormatUpdate": {
         "type": "object",
         "properties": {
-          "name": { "type": "string", "maxLength": 100 },
-          "fileType": { "type": "string", "enum": ["csv", "json", "xlsx"] },
-          "startRow": { "type": "integer", "minimum": 1, "maximum": 100 },
-          "fieldMappings": { "type": "array", "items": { "$ref": "#/components/schemas/FieldMapping" }, "minItems": 1 },
-          "maxRowsPerFile": { "type": "integer", "minimum": 10, "maximum": 100000, "nullable": true },
-          "splitFiles": { "type": "boolean" },
-          "splitMode": { "type": "string", "enum": ["max_rows", "equal_parts", "parts_max_rows"] },
-          "numberOfParts": { "type": "integer", "minimum": 2, "maximum": 100, "nullable": true },
-          "includeTotal": { "type": "boolean" },
-          "includeHeaders": { "type": "boolean" }
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "fileType": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "json",
+              "xlsx"
+            ]
+          },
+          "startRow": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "fieldMappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldMapping"
+            },
+            "minItems": 1
+          },
+          "maxRowsPerFile": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 100000,
+            "nullable": true
+          },
+          "splitFiles": {
+            "type": "boolean"
+          },
+          "splitMode": {
+            "type": "string",
+            "enum": [
+              "max_rows",
+              "equal_parts",
+              "parts_max_rows"
+            ]
+          },
+          "numberOfParts": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 100,
+            "nullable": true
+          },
+          "includeTotal": {
+            "type": "boolean"
+          },
+          "includeHeaders": {
+            "type": "boolean"
+          }
         }
       },
       "FieldMapping": {
         "type": "object",
-        "required": ["sourceField", "exportName", "type"],
+        "required": [
+          "sourceField",
+          "exportName",
+          "type"
+        ],
         "properties": {
-          "sourceField": { "type": "string", "description": "Internal field name" },
-          "exportName": { "type": "string", "description": "Column header in export" },
-          "type": { "type": "string", "enum": ["field", "spacer"] }
+          "sourceField": {
+            "type": "string",
+            "description": "Internal field name"
+          },
+          "exportName": {
+            "type": "string",
+            "description": "Column header in export"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "field",
+              "spacer"
+            ]
+          }
         }
       },
       "ExportHistoryEntry": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "fileName": { "type": "string" },
-          "fileType": { "type": "string" },
-          "leadCount": { "type": "integer" },
-          "fileSize": { "type": "integer" },
-          "formatName": { "type": "string" },
-          "databaseType": { "type": "string" },
-          "filters": { "type": "object", "nullable": true },
-          "expiresAt": { "type": "string", "format": "date-time" },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "fileType": {
+            "type": "string"
+          },
+          "leadCount": {
+            "type": "integer"
+          },
+          "fileSize": {
+            "type": "integer"
+          },
+          "formatName": {
+            "type": "string"
+          },
+          "databaseType": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "object",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "BlacklistEntry": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "value": { "type": "string", "description": "Domain or identifier to blacklist" },
-          "type": { "type": "string" },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "value": {
+            "type": "string",
+            "description": "Domain or identifier to blacklist"
+          },
+          "type": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "BlacklistEntryInput": {
         "type": "object",
-        "required": ["value", "type"],
+        "required": [
+          "value",
+          "type"
+        ],
         "properties": {
-          "value": { "type": "string", "description": "Domain or identifier to blacklist" },
-          "type": { "type": "string", "description": "Entry type" }
+          "value": {
+            "type": "string",
+            "description": "Domain or identifier to blacklist"
+          },
+          "type": {
+            "type": "string",
+            "description": "Entry type"
+          }
         }
       },
       "Error": {
         "type": "object",
         "properties": {
-          "error": { "type": "string", "description": "Error code" },
-          "message": { "type": "string", "description": "Human-readable error message" }
+          "error": {
+            "type": "string",
+            "description": "Error code"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message"
+          }
         }
       }
     },
@@ -1847,8 +4026,13 @@
         "description": "Invalid request parameters",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" },
-            "example": { "error": "bad_request", "message": "No valid fields provided" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "bad_request",
+              "message": "No valid fields provided"
+            }
           }
         }
       },
@@ -1856,8 +4040,13 @@
         "description": "Missing or invalid API key",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" },
-            "example": { "error": "unauthorized", "message": "Invalid or missing API key" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "unauthorized",
+              "message": "Invalid or missing API key"
+            }
           }
         }
       },
@@ -1865,8 +4054,13 @@
         "description": "Insufficient permissions or subscription required",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" },
-            "example": { "error": "forbidden", "message": "Active subscription required" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "forbidden",
+              "message": "Active subscription required"
+            }
           }
         }
       },
@@ -1874,23 +4068,50 @@
         "description": "Resource not found",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" },
-            "example": { "error": "not_found", "message": "Resource not found" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "not_found",
+              "message": "Resource not found"
+            }
           }
         }
       },
       "RateLimited": {
         "description": "Rate limit exceeded",
         "headers": {
-          "Retry-After": { "schema": { "type": "integer" }, "description": "Seconds to wait before retrying" },
-          "X-RateLimit-Limit": { "schema": { "type": "integer" } },
-          "X-RateLimit-Remaining": { "schema": { "type": "integer" } },
-          "X-RateLimit-Reset": { "schema": { "type": "integer" } }
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds to wait before retrying"
+          },
+          "X-RateLimit-Limit": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Remaining": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Reset": {
+            "schema": {
+              "type": "integer"
+            }
+          }
         },
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" },
-            "example": { "error": "rate_limited", "message": "Rate limit exceeded. Please retry after the Retry-After period." }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "rate_limited",
+              "message": "Rate limit exceeded. Please retry after the Retry-After period."
+            }
           }
         }
       },
@@ -1904,7 +4125,9 @@
                 "data": {
                   "type": "object",
                   "properties": {
-                    "message": { "type": "string" }
+                    "message": {
+                      "type": "string"
+                    }
                   }
                 }
               }

@@ -23,6 +23,11 @@ Examples:
   python smb_api.py none POST /purchase --body '{"email":"user@example.com","plan":"starter"}'
   python smb_api.py none POST /claim-key --body '{"email":"user@example.com","claimToken":"tok_abc123"}'
   python smb_api.py smbk_xxx GET /leads/other/schema-types
+  python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\"]","stateInclude":"TX","maxCredits":"10"}'
+  python smb_api.py smbk_xxx GET /auto-top-up
+  python smb_api.py smbk_xxx PATCH /auto-top-up --body '{"enabled":true,"triggerType":"credits","triggerAmount":100,"purchaseType":"credits","purchaseAmount":500}'
+  python smb_api.py smbk_xxx POST /settings/switch-database --body '{"smbType":"other"}'
+  python smb_api.py smbk_xxx GET /settings/database
 """
 
 import sys
@@ -146,7 +151,7 @@ def main():
         print(json.dumps({
             "status": 402,
             "error": "insufficient_credits",
-            "message": data.get("message", "Insufficient credits to complete this export."),
+            "message": data.get("message", "Insufficient credits. Use maxCredits/maxResults to limit usage, or purchase more credits."),
             "data": data
         }, indent=2))
     else:

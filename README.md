@@ -23,32 +23,36 @@ Place the `smb-sales-boost/` folder in your Claude skills directory:
 
 ## Credit-Based Plans
 
-Starter, Growth, and Scale plans use a credit-based model:
+Starter, Growth, and Scale plans use a credit-based model where **each new lead queried or exported costs 1 credit**:
 
-- Each **net-new lead exported** deducts 1 credit
-- **Previously-exported leads** are free
+- Each **new lead returned** by `GET /leads` (search/query) deducts 1 credit
+- Each **net-new lead** in a `POST /leads/export` (export) deducts 1 credit
+- **Previously-exported leads** are free to re-query or re-export
+- Both endpoints support `maxCredits` (cap spending) and `maxResults` (cap total leads) parameters for credit-optimized ordering
+- Set `maxCredits=0` on either endpoint to only receive previously-exported leads at no cost
 - Purchase additional permanent credits anytime via `POST /purchase-credits`
+- Configure automatic top-ups via `PATCH /auto-top-up`
 
-**Credit Pricing:**
+**Credit Pricing & Allocations:**
 
-| Plan | Per Credit |
-|------|-----------|
-| Starter | $0.10 |
-| Growth | $0.08 |
-| Scale | $0.05 |
-| Platinum | $0.03 |
-| Enterprise | $0.02 |
+| Plan | Per Credit | Monthly Credits | Max Purchase/Transaction |
+|------|-----------|----------------|--------------------------|
+| Starter | $0.10 | 500 | 2,500 |
+| Growth | $0.075 | 2,000 | 10,000 |
+| Scale | $0.05 | 10,000 | 50,000 |
+| Platinum | $0.03 | 100,000 | — |
+| Enterprise | $0.02 | 250,000 | — |
 
 ## Two Databases
 
 SMB Sales Boost provides two separate lead databases with different contact information:
 
 - **Home Improvement** (`home_improvement`) — Home improvement/contractor businesses with **phone numbers**, star ratings, review counts, review snippets, profile URLs, and categories
-- **Other** (`other`) — General newly registered businesses with **phone numbers and email addresses**, registered URLs, crawled URLs, descriptions, and redirect status
+- **Other** (`other`) — General newly registered businesses with **phone numbers and email addresses**, registered URLs, crawled URLs, descriptions, redirect status, and AI-enriched category estimations
 
 The Home Improvement database provides phone numbers as the primary contact method. The Other database provides both phone numbers and email addresses, making it ideal for cold email and multi-channel outreach campaigns.
 
-Each database has different filterable fields. Users can switch between databases (with a cooldown period).
+Each database has different filterable fields. Users can switch between databases via `POST /settings/switch-database` with `smbType` field (cooldown period applies). Leads in the Other database are progressively enriched with AI category estimations (1-3 categories per lead).
 
 ## What Users Can Do
 
@@ -63,6 +67,8 @@ Once the skill is installed, users can interact with SMB Sales Boost in natural 
 - **Full-text search:** "Search for organic coffee shops"
 - **Filter by website schema:** "Find businesses with LocalBusiness schema type" (other only)
 - **Filter by registration date:** "Show leads registered in the last 6 months" (other only)
+- **Control query credits:** "Search but only spend 10 credits" (uses `maxCredits=10` on query)
+- **Free re-queries:** "Show me only leads I've already exported" (uses `maxCredits=0` on query)
 - **Export data:** "Export these leads as a CSV"
 - **Control export credits:** "Export but only spend 50 credits max"
 - **Free re-exports:** "Export only previously-exported leads" (uses `maxCredits: 0`)
@@ -78,6 +84,8 @@ Once the skill is installed, users can interact with SMB Sales Boost in natural 
 - **Manage blacklist:** "Exclude example.com from future exports"
 - **Account info:** "What subscription plan am I on?" / "How many credits do I have?"
 - **Buy credits:** "Purchase 500 more credits"
+- **Auto top-up:** "Set up auto top-up so I never run out of credits"
+- **Check top-up settings:** "What are my auto top-up settings?"
 - **Change plans:** "Upgrade to the Growth plan"
 - **Cancel:** "Cancel my subscription"
 - **Sign up via API:** "I want to sign up for a Starter plan" (programmatic purchase, no web signup needed)
@@ -97,6 +105,8 @@ Use multiple variations for broader coverage — keywords are matched via OR log
 ```
 
 Keywords without wildcards perform substring matching by default.
+
+**URL Space-to-Wildcard:** For URL columns, spaces in search terms are automatically replaced with `%` wildcards. For example, "dental clinic" becomes `%dental%clinic%` to match URLs like `example.com/dental-clinic`.
 
 ## Understanding "Last Updated"
 
@@ -118,7 +128,7 @@ Claude: [Calls GET /leads with
          stateInclude=FL,GA, lastUpdatedFrom=rel:7d]
 
 I found 287 cleaning-related businesses in Florida and Georgia updated
-in the last week. Here are the first 10:
+in the last week. Here are the first 10 (100 credits used, 400 remaining):
 
 | Company Name               | City         | State | Phone        | Email                    | Last Updated |
 |----------------------------|--------------|-------|--------------|--------------------------|--------------|
@@ -127,7 +137,8 @@ in the last week. Here are the first 10:
 | ...                        | ...          | ...   | ...          | ...                      | ...          |
 
 Would you like me to export all 287 results, narrow the search,
-or save this as a filter preset?
+or save this as a filter preset? You can also use maxCredits to
+limit how many credits the next search uses.
 ```
 
 ```
@@ -159,9 +170,9 @@ Claude: SMB Sales Boost offers three credit-based plans:
 
 | Plan | Credits/month | Per Credit |
 |------|--------------|-----------|
-| Starter | Included | $0.10 |
-| Growth | Included | $0.08 |
-| Scale | Included | $0.05 |
+| Starter | 500 | $0.10 |
+| Growth | 2,000 | $0.075 |
+| Scale | 10,000 | $0.05 |
 
 Plus Platinum ($0.03/credit) and Enterprise ($0.02/credit) tiers.
 
@@ -171,13 +182,9 @@ for you right here — no web signup needed.
 
 ## Rate Limits
 
-- Exports: 1 per 5 minutes, max 10,000 leads per export
-- Email schedule trigger: 1 per 5 minutes
-- AI category suggestions: 5 per minute
-- AI keyword generation: 5 per minute
-- AI auto-refine enable: 5 per minute
-- AI auto-refine disable/status: 60 per minute
-- AI keyword status: 60 per minute
+- General endpoints: 60 requests per minute
+- Export endpoints: 1 per 5 minutes (max 10,000 leads per export)
+- AI endpoints: 5 per minute
 - Programmatic purchase: 5 per hour per IP
 - Claim key: 30 per hour per IP
 
@@ -188,9 +195,9 @@ The skill covers all SMB Sales Boost API endpoints:
 | Feature | Endpoints | Operations |
 |---------|-----------|------------|
 | Programmatic Purchase | `/purchase`, `/claim-key` | Start purchase, Claim API key |
-| Credits & Subscription | `/purchase-credits`, `/subscription/change-plan`, `/subscription/cancel` | Buy credits, Change plan, Cancel |
+| Credits & Subscription | `/purchase-credits`, `/auto-top-up`, `/subscription/change-plan`, `/subscription/cancel` | Buy credits, Auto top-up config, Change plan, Cancel |
 | User Profile | `/me` | Get, Update |
-| Lead Search | `/leads` | Search with filters (11 new filter params) |
+| Lead Search | `/leads` | Search with filters, credit-aware (maxCredits, maxResults) |
 | Schema Types | `/leads/other/schema-types` | List available website schema types |
 | Lead Export | `/leads/export` | Export to CSV/JSON/XLSX (credit-aware) |
 | Filter Presets | `/filter-presets` | List, Create, Delete |
@@ -198,7 +205,7 @@ The skill covers all SMB Sales Boost API endpoints:
 | Email Schedules | `/email-schedules` | List, Create, Update, Delete, Trigger |
 | Export Formats | `/export-formats` | List, Create, Get, Update, Delete, Set Default |
 | Export History | `/export-history` | List, Download |
-| Database Settings | `/settings/database`, `/settings/switch-database` | Get, Switch |
+| Database Settings | `/settings/database`, `/settings/switch-database` | Get (with canSwitch/daysRemaining), Switch (via smbType field) |
 | AI Categories | `/ai/suggest-categories` | Suggest categories |
 | AI Keywords | `/ai/generate-keywords`, `/ai/keyword-status` | Generate (wildcard patterns), Check status |
 | AI Auto-Refine | `/ai/auto-refine/enable`, `/ai/auto-refine/disable`, `/ai/auto-refine/status` | Enable, Disable, Check status |

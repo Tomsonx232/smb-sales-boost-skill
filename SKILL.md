@@ -26,33 +26,33 @@ If the user hasn't provided their API key yet, ask them for it before making any
 
 ## Credit-Based System
 
-Starter, Growth, and Scale plans use a **credit-based model** for lead exports:
+Starter, Growth, and Scale plans use a **credit-based model** for both **querying and exporting** leads:
 
-- Each **net-new lead exported** deducts 1 credit
-- **Previously-exported leads** are free (do not consume credits)
+- Each **new lead returned** by `GET /leads` (query) costs 1 credit
+- Each **net-new lead exported** by `POST /leads/export` costs 1 credit
+- **Previously-exported leads** are free to re-query or re-export (do not consume credits)
+- Both endpoints support `maxCredits` (cap credit spending) and `maxResults` (cap total leads) for credit-optimized ordering: new leads are sorted first, then previously-exported leads fill remaining slots
+- Set `maxCredits=0` on either endpoint to only receive previously-exported leads at no credit cost
 - Platinum and Enterprise plans are not credit-limited
 
 **Credit Pricing (per credit):**
-| Plan | Cost per Credit |
-|------|----------------|
-| Starter | $0.10 |
-| Growth | $0.08 |
-| Scale | $0.05 |
-| Platinum | $0.03 |
-| Enterprise | $0.02 |
+| Plan | Cost per Credit | Monthly Credits | Max Purchase per Transaction |
+|------|----------------|----------------|------------------------------|
+| Starter | $0.10 | 500 | 2,500 |
+| Growth | $0.075 | 2,000 | 10,000 |
+| Scale | $0.05 | 10,000 | 50,000 |
+| Platinum | $0.03 | 100,000 | — |
+| Enterprise | $0.02 | 250,000 | — |
 
-Users can purchase additional permanent credits via `POST /purchase-credits`.
+**Credit balance fields** (from `GET /me`): `monthlyCredits`, `monthlyCreditsUsed`, `monthlyCreditsRemaining`, `permanentCredits`, `totalCreditsRemaining`, `creditOverageRate`
+
+Users can purchase additional permanent credits via `POST /purchase-credits` or configure automatic top-ups via `GET/PATCH /auto-top-up`.
 
 ## Rate Limits
 
-- Exports: 1 per 5 minutes
-- Email schedule trigger: 1 per 5 minutes
-- AI category suggestions: 5 per minute
-- AI keyword generation: 5 per minute
-- AI auto-refine enable: 5 per minute
-- AI auto-refine disable: 60 per minute
-- AI auto-refine status: 60 per minute
-- AI keyword status: 60 per minute
+- General endpoints: 60 requests per minute
+- Export endpoints: 1 per 5 minutes
+- AI endpoints: 5 per minute
 - Programmatic purchase: 5 per hour per IP
 - Claim key: 30 per hour per IP
 
@@ -63,7 +63,7 @@ Rate limit headers are returned on every response: `X-RateLimit-Limit`, `X-RateL
 SMB Sales Boost has two separate databases with different contact information available:
 
 1. **`home_improvement`** — Home improvement/contractor businesses with **phone numbers**, star ratings, review counts, review snippets, profile URLs, and categories
-2. **`other`** — General newly registered businesses with **phone numbers and email addresses**, registered URLs, crawled URLs, short/long descriptions, and redirect status
+2. **`other`** — General newly registered businesses with **phone numbers and email addresses**, registered URLs, crawled URLs, short/long descriptions, redirect status, and AI-enriched category estimations
 
 The Home Improvement database provides phone numbers as the primary contact method. The Other database provides both phone numbers and email addresses, making it ideal for cold email and multi-channel outreach campaigns.
 
@@ -75,7 +75,7 @@ Some filter parameters only work with one database type. The user's account has 
 
 ### 1. Search Leads — `GET /leads`
 
-The primary endpoint. Translates natural language queries into filtered lead searches.
+The primary endpoint. Translates natural language queries into filtered lead searches. **Each new lead returned costs 1 credit** (previously-exported leads are free to re-query). Supports `maxCredits` and `maxResults` parameters for credit-optimized ordering.
 
 **Key Parameters:**
 
@@ -118,6 +118,7 @@ The primary endpoint. Translates natural language queries into filtered lead sea
 - Combine wildcards for compound terms: `"*auto*repair*"` matches "auto body repair", "automotive repair shop", etc.
 - Use multiple keyword variations for broader coverage: `["*dental*", "*dentist*", "*orthodont*"]`
 - Keywords without wildcards still perform substring matching by default
+- **URL Space-to-Wildcard:** For URL columns (registered URL, crawled URL, profile URL), spaces in search terms are automatically replaced with `%` wildcards. For example, "dental clinic" becomes `%dental%clinic%` to match URLs like `example.com/dental-clinic`
 
 **Home Improvement Only:**
 
@@ -146,11 +147,24 @@ The primary endpoint. Translates natural language queries into filtered lead sea
 | `timeScrapedFrom` / `timeScrapedTo` | date string | Filter by when leads were scraped (ISO 8601 or relative format e.g., `rel:30d`) |
 | `websiteSchemaFilter` | string | Comma-separated website schema types (e.g., `LocalBusiness,Organization`). Use `GET /leads/other/schema-types` for available values. |
 
+**Credit Control Parameters (also available on export):**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `maxResults` | integer | Cap total leads returned (new + previously-exported). New leads prioritized first, then previously-exported fill remaining slots. |
+| `maxCredits` | integer | Cap credits spent on this query. Set to `0` to only receive previously-exported leads at no cost. |
+
+When `maxCredits` or `maxResults` is specified, credit-optimized ordering is applied: new (credit-consuming) leads sorted first, then previously-exported leads, each group sorted by lastUpdated descending (or your custom sort).
+
 **Important:** At least one positive filter is required (positiveKeywords or any column-specific include terms).
 
-**Response includes:** `leads` array, `totalCount`, `page`, `limit`, `databaseType`
+**Response includes:** `leads` array, `totalCount`, `page`, `limit`, `databaseType`, `creditsUsed`, `creditsRemaining` (credit-plan users only), `maxResults`, `maxCredits` (echoed when specified)
+
+**Error 402 Payment Required:** Returned when credit-plan users have insufficient credits. Use `maxCredits` or `maxResults` to limit credit usage, or purchase more credits.
 
 **Lead fields:** `id`, `companyName`, `state`, `city`, `zip`, `phone`, `email`, `categories`, `lastUpdated` (phone/email masked for free users). The `lastUpdated` field indicates when contact information was last detected or updated — this is the best indicator of lead freshness and actionability.
+
+**AI Category Estimation (Other Database):** Leads in the Other database may include an `aiCategoryEstimation` field containing an array of 1-3 AI-estimated category names, or null if not yet classified. This progressive enrichment classifies businesses into 957+ categories.
 
 ### 2. Website Schema Types — `GET /leads/other/schema-types`
 
@@ -218,10 +232,14 @@ Email schedules now support distribution modes and lead reservoirs.
 
 **Lead reservoir:** Set `maxLeadsPerEmail` to cap leads per delivery. Overflow is stored and included in the next scheduled email.
 
+**Schedule pause reasons:** The `pauseReason` field indicates why a schedule is paused: `null` (not paused), `"user"` (manually paused), or `"insufficient_credits"` (auto-paused due to low credits).
+
+**Combined File Feature:** When file splitting is enabled, you can configure a combined file that includes an assignee column and file name column, sent to dedicated combined recipients. Use `combinedAssigneeColumnName` and `combinedFileNameColumnName` on export formats.
+
 ### 7. Export Formats — `/export-formats`
 
 - `GET /export-formats` — List custom export formats
-- `POST /export-formats` — Create (requires `name`, supports `fileType`, `fieldMappings`, split settings)
+- `POST /export-formats` — Create (requires `name`, supports `fileType`, `fieldMappings`, split settings, `databaseType`, `combinedAssigneeColumnName`, `combinedFileNameColumnName`)
 - `GET /export-formats/{id}` — Get specific format
 - `PATCH /export-formats/{id}` — Update
 - `DELETE /export-formats/{id}` — Delete
@@ -269,8 +287,8 @@ Endpoints:
 
 - `GET /me` — Get user profile (subscription plan, settings, onboarding status, credit balance)
 - `PATCH /me` — Update profile (firstName, lastName, companyName, companyWebsite)
-- `GET /settings/database` — Check current database type and switch availability
-- `POST /settings/switch-database` — Switch between databases (has cooldown)
+- `GET /settings/database` — Check current database type and switch availability. Returns: `currentDatabase`, `canSwitch` (boolean), `daysRemaining` (days until switch allowed), `lastSwitchedAt` (ISO timestamp or null)
+- `POST /settings/switch-database` — Switch between databases (has cooldown). Requires `smbType` field with value `home_improvement` or `other`. Incompatible email schedules are auto-paused; the response includes a `pausedSchedules` count.
 
 ### 12. Programmatic Purchase — Buy a subscription via API
 
@@ -282,8 +300,10 @@ No web signup required. New users can purchase and get an API key entirely via A
 
 ### 13. Credits & Subscription Management
 
-- `POST /purchase-credits` — Purchase additional permanent credits. Provide either `creditCount` (min 100) or `dollarAmount` (min $1). Uses saved payment method (Stripe off-session charge).
-- `POST /subscription/change-plan` — Upgrade or downgrade between starter, growth, and scale. On upgrade, unused monthly credits convert to permanent credits. Downgrades take effect at renewal.
+- `POST /purchase-credits` — Purchase additional permanent credits. Provide either `creditCount` (min 100, max 5x your plan's monthly credits) or `dollarAmount` (min $1). Uses saved payment method (Stripe off-session charge). Pricing: Starter 10¢, Growth 7.5¢, Scale 5¢ per credit. Only available for Starter, Growth, and Scale plans.
+- `GET /auto-top-up` — Get auto top-up configuration (trigger threshold, purchase amount, monthly cap, current usage).
+- `PATCH /auto-top-up` — Configure automatic credit purchases. When enabled, credits are purchased automatically when permanent credit balance falls below the trigger threshold. Parameters: `enabled` (required, boolean), `triggerType` ("credits" or "dollars"), `triggerAmount`, `purchaseType` ("credits" or "dollars"), `purchaseAmount`, `capType` ("credits", "dollars", or null), `capAmount` (nullable).
+- `POST /subscription/change-plan` — Upgrade or downgrade between starter, growth, and scale. On upgrade, unused monthly credits convert to permanent credits (capped at current plan's standard allocation). Downgrades take effect at renewal.
 - `POST /subscription/cancel` — Cancel subscription at end of current billing period. Access continues until period ends.
 
 ---
@@ -319,6 +339,10 @@ When users make natural language requests, translate them into API calls. Use mu
 | "Check on my keyword generation" | `GET /ai/keyword-status` |
 | "Send my scheduled email now" | `POST /email-schedules/{id}/trigger` |
 | "Split leads evenly among my sales team" | `POST /email-schedules` with `distributionMode: "split_evenly"` |
+| "Search but only spend 10 credits" | `GET /leads` with `maxCredits=10` |
+| "Show me only leads I've already exported" | `GET /leads` with `maxCredits=0` |
+| "Set up auto top-up for credits" | `PATCH /auto-top-up` with `enabled: true` and thresholds |
+| "Check my auto top-up settings" | `GET /auto-top-up` |
 | "I want to sign up for a Starter plan" | `POST /purchase` with `plan: "starter"` |
 
 ## Building API Requests
@@ -373,6 +397,21 @@ python smb_api.py smbk_xxx POST /subscription/change-plan --body '{"targetPlan":
 # Cancel subscription
 python smb_api.py smbk_xxx POST /subscription/cancel
 
+# Search leads with credit controls (cap at 10 credits)
+python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\"]","stateInclude":"TX","maxCredits":"10","maxResults":"50"}'
+
+# Search only previously-exported leads (free, no credits used)
+python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\"]","stateInclude":"TX","maxCredits":"0"}'
+
+# Get auto top-up configuration
+python smb_api.py smbk_xxx GET /auto-top-up
+
+# Configure auto top-up (buy 500 credits when balance drops below 100)
+python smb_api.py smbk_xxx PATCH /auto-top-up --body '{"enabled":true,"triggerType":"credits","triggerAmount":100,"purchaseType":"credits","purchaseAmount":500}'
+
+# Disable auto top-up
+python smb_api.py smbk_xxx PATCH /auto-top-up --body '{"enabled":false}'
+
 # Start a programmatic purchase (no auth needed, but script still requires a placeholder key)
 python smb_api.py none POST /purchase --body '{"email":"user@example.com","plan":"starter"}'
 
@@ -386,7 +425,7 @@ python smb_api.py smbk_xxx POST /ai/suggest-categories --body '{"companyName":"F
 python smb_api.py smbk_xxx POST /filter-presets --body '{"name":"NY Bakeries","filters":{"positiveKeywords":["*bakery*","*bake*shop*","*cater*","*pastry*"],"stateInclude":"NY"}}'
 
 # Create email schedule with split distribution
-python smb_api.py smbk_xxx POST /email-schedules --body '{"name":"Daily TX Leads","filterPresetId":5,"intervalValue":1,"intervalUnit":"days","recipients":["rep1@co.com","rep2@co.com"],"distributionMode":"split_evenly","fullCopyRecipients":["manager@co.com"],"maxLeadsPerEmail":50}'
+python smb_api.py smbk_xxx POST /email-schedules --body '{"name":"Daily TX Leads","filterPresetId":5,"intervalValue":1,"intervalUnit":"days","recipients":[{"email":"rep1@co.com"},{"email":"rep2@co.com"}],"distributionMode":"split_evenly","fullCopyRecipients":["manager@co.com"],"maxLeadsPerEmail":50}'
 
 # Enable AI auto-refine on a keyword list
 python smb_api.py smbk_xxx POST /ai/auto-refine/enable --body '{"listId":42}'
@@ -415,7 +454,7 @@ The script outputs JSON to stdout and rate limit headers to stderr. For export r
 - Home Improvement database provides phone numbers; Other database provides phone numbers and email addresses
 - Phone and email are masked for free-tier users
 - Present results in a clean, readable table format
-- For credit-plan users, mention credits used/remaining after exports
+- For credit-plan users, mention credits used/remaining after both queries and exports (both consume credits for new leads)
 - The `POST /purchase` and `POST /claim-key` endpoints do not require authentication (no API key needed)
 
 ## Security
