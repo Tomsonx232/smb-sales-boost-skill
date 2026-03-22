@@ -1,14 +1,14 @@
-# SMB Sales Boost — Claude Skill
+# SMB Sales Boost — OpenClaw Skill
 
-A Claude skill that lets subscribers query the SMB Sales Boost lead database using natural language. Search, filter, and export newly registered small and medium businesses across the United States with comprehensive company data including contact information, location, and AI-enriched categories.
+A skill that lets subscribers query the SMB Sales Boost lead database using natural language. Search, filter, and export newly registered small and medium businesses across the United States with comprehensive company data including contact information, location, and AI-enriched categories.
 
 ## Installation
 
-Place the `smb-sales-boost/` folder in your Claude skills directory:
+Place the `smb-sales-boost/` folder in your skills directory:
 
 ```
-/mnt/skills/user/smb-sales-boost/
-├── SKILL.md          # Skill instructions for Claude
+<workspace>/skills/smb-sales-boost/
+├── SKILL.md          # Skill instructions (with OpenClaw metadata)
 ├── smb_api.py        # Reusable API client (handles all endpoints + safe exports)
 ├── openapi.json      # Full OpenAPI 3.1 specification (reference)
 └── README.md         # This file
@@ -17,9 +17,37 @@ Place the `smb-sales-boost/` folder in your Claude skills directory:
 ## Requirements
 
 - Active SMB Sales Boost subscription: **Starter**, **Growth**, **Scale**, **Platinum**, or **Enterprise**
-- API key generated from Dashboard > API tab (keys start with `smbk_`). Set as the `SMB_SALES_BOOST_API_KEY` environment variable or pass directly to `smb_api.py` as the first argument
+- API key generated from Dashboard > API tab (keys start with `smbk_`)
 - Base URL: `https://smbsalesboost.com/api/v1`
 - New users can purchase a subscription entirely via API — no web signup required
+
+## OpenClaw Configuration
+
+The skill declares `SMB_SALES_BOOST_API_KEY` as a required env var via `metadata.openclaw.requires.env` and `primaryEnv` in the SKILL.md frontmatter. Configure it in `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "skills": {
+    "entries": {
+      "smb-sales-boost": {
+        "enabled": true,
+        "apiKey": { "source": "env", "provider": "default", "id": "SMB_SALES_BOOST_API_KEY" },
+        "env": {
+          "SMB_SALES_BOOST_API_KEY": "smbk_your_key_here"
+        }
+      }
+    }
+  }
+}
+```
+
+Alternatively, export the env var in your shell before starting OpenClaw:
+
+```bash
+export SMB_SALES_BOOST_API_KEY="smbk_your_key_here"
+```
+
+The `smb_api.py` script also accepts the key as its first CLI argument or reads from the `SMB_SALES_BOOST_API_KEY` env var automatically.
 
 ## Credit-Based Plans
 
