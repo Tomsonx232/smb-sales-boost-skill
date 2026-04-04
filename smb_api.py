@@ -14,6 +14,7 @@ Usage:
 
 Examples:
   python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\",\"*dentist*\",\"*orthodont*\"]","stateInclude":"TX","limit":"10"}'
+  python smb_api.py smbk_xxx GET /leads/preview --params '{"positiveKeywords":"[\"*dental*\",\"*dentist*\"]","stateInclude":"TX","limit":"25"}'
   python smb_api.py smbk_xxx GET /me
   python smb_api.py smbk_xxx POST /leads/export --body '{"database":"other","filters":{"positiveKeywords":["*med*spa*","*aesthet*","*botox*"],"stateInclude":"FL"},"maxCredits":100}'
   python smb_api.py smbk_xxx POST /ai/suggest-categories --body '{"companyName":"FitPro Supply","companyDescription":"Commercial fitness equipment","productService":"Gym equipment, treadmills"}'

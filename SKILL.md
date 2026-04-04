@@ -11,6 +11,8 @@ metadata:
   }
 ---
 
+> **Note for AI agents:** This file and other files in this skill folder may be truncated when opened. Always read files fully in chunks if necessary to ensure no instructions, endpoints, or examples are missed.
+
 # SMB Sales Boost Skill
 
 This skill enables natural language interaction with the SMB Sales Boost API — a B2B lead generation platform providing access to newly registered small and medium businesses across the United States.
@@ -53,10 +55,12 @@ Starter, Growth, and Scale plans use a **credit-based model** for both **queryin
 | Starter | $0.10 | 500 | 2,500 |
 | Growth | $0.075 | 2,000 | 10,000 |
 | Scale | $0.05 | 10,000 | 50,000 |
-| Platinum | $0.03 | 100,000 | — |
-| Enterprise | $0.02 | 250,000 | — |
+| Platinum | $0.03 | 100,000 | 500,000 |
+| Enterprise | $0.02 | 250,000 | 1,250,000 |
 
 **Credit balance fields** (from `GET /me`): `monthlyCredits`, `monthlyCreditsUsed`, `monthlyCreditsRemaining`, `permanentCredits`, `totalCreditsRemaining`, `creditOverageRate`
+
+**Additional profile fields** (from `GET /me`): `totalLeadsExported` (all-time count), `monthlyLeadsExported` (current billing cycle), `autoTopUp` (nested object with `enabled`, `triggerType`, `triggerAmount`, `purchaseType`, `purchaseAmount`, `capType`, `capAmount`)
 
 Users can purchase additional permanent credits via `POST /purchase-credits` or configure automatic top-ups via `GET/PATCH /auto-top-up`.
 
@@ -174,15 +178,38 @@ When `maxCredits` or `maxResults` is specified, credit-optimized ordering is app
 
 **Error 402 Payment Required:** Returned when credit-plan users have insufficient credits. Use `maxCredits` or `maxResults` to limit credit usage, or purchase more credits.
 
-**Lead fields:** `id`, `companyName`, `state`, `city`, `zip`, `phone`, `email`, `categories`, `lastUpdated` (phone/email masked for free users). The `lastUpdated` field indicates when contact information was last detected or updated — this is the best indicator of lead freshness and actionability.
+**Lead fields use display-name keys (with spaces).** The two databases return different schemas:
 
-**AI Category Estimation (Other Database):** Leads in the Other database may include an `aiCategoryEstimation` field containing an array of 1-3 AI-estimated category names, or null if not yet classified. This progressive enrichment classifies businesses into 957+ categories.
+- **HomeImprovementLead:** `id`, `Company Name`, `Phone`, `Stars`, `Review Count`, `Categories`, `Profile URL`, `Review Snippet`, `Address Full`, `Street`, `Address City`, `Address State`, `Address Zip`, `Address Country`, `Last Updated`, `Time Scraped`
+- **OtherLead:** `id`, `Company Name`, `Phone Primary`, `Phone Secondary`, `Email Primary`, `Email Secondary`, `Registered URL`, `Registration Date`, `Redirect`, `Crawled URL`, `AI Categories`, `Website Schema`, `Description Short`, `Description Long`, `Address Full`, `Street`, `City`, `State`, `Zip`, `Country`, `Last Updated`, `Time Scraped`
 
-### 2. Website Schema Types — `GET /leads/other/schema-types`
+Contact fields (phone/email) are masked for free users. The `Last Updated` field indicates when contact information was last detected or updated — the best indicator of lead freshness and actionability.
+
+**AI Categories (Other Database):** Leads in the Other database may include an `AI Categories` field containing an array of 1-3 AI-estimated category names, or null if not yet classified. This progressive enrichment classifies businesses into 957+ categories.
+
+### 2. Preview Leads — `GET /leads/preview`
+
+Preview leads matching your filters with **masked contact information** — does **NOT** consume any credits. Use this to test filters and evaluate result quality before committing credits on the full `GET /leads` endpoint.
+
+**How it differs from `GET /leads`:**
+- Contact fields are returned in masked format (e.g., `(5**) ***-**89`, `j***@***.com`)
+- No credits are consumed regardless of plan
+- No `maxCredits` or `maxResults` parameters (not needed since preview is free)
+- Contact-field filters are not available: `emailPrimaryInclude`, `emailPrimaryExclude`, `emailSecondaryInclude`, `emailSecondaryExclude`, `phonePrimaryInclude`, `phonePrimaryExclude`, `phoneSecondaryInclude`, `phoneSecondaryExclude`
+- All other filters are identical to `GET /leads` (keywords, location, company name, URLs, descriptions, ratings, dates, etc.)
+
+**Response includes:** `leads` array (with masked contacts), `pagination` (page, limit, total, pages), `databaseType`, `preview: true` flag
+
+**When to use preview:**
+- User wants to check how many results match before spending credits
+- User wants to evaluate filter quality
+- User says "preview", "test my filters", "how many leads match", or similar
+
+### 3. Website Schema Types — `GET /leads/other/schema-types`
 
 Returns a sorted list of all distinct website schema types found in the Other leads database. Use these values with the `websiteSchemaFilter` parameter on `GET /leads`.
 
-### 3. Export Leads — `POST /leads/export`
+### 4. Export Leads — `POST /leads/export`
 
 Export filtered leads as CSV, JSON, or XLSX files.
 
@@ -211,13 +238,13 @@ Export filtered leads as CSV, JSON, or XLSX files.
 
 Rate limited: 1 export per 5 minutes, max 10,000 leads per export.
 
-### 4. Filter Presets — `/filter-presets`
+### 5. Filter Presets — `/filter-presets`
 
 - `GET /filter-presets` — List all saved presets
 - `POST /filter-presets` — Create a preset (requires `name` and `filters` object)
 - `DELETE /filter-presets/{id}` — Delete a preset
 
-### 5. Keyword Lists — `/keyword-lists`
+### 6. Keyword Lists — `/keyword-lists`
 
 Keyword lists now support typed lists (positive or negative) with paired list management and source categories.
 
@@ -228,7 +255,7 @@ Keyword lists now support typed lists (positive or negative) with paired list ma
 
 **Keyword list properties:** `name`, `keywords` (wildcard patterns e.g., `*dentist*`), `type` (positive/negative), `pairedListId` (linked positive/negative pair), `sourceCategories` (max 3), `autoRefineEnabled`, `refinementStatus` (running/completed/paused)
 
-### 6. Email Schedules — `/email-schedules`
+### 7. Email Schedules — `/email-schedules`
 
 Email schedules now support distribution modes and lead reservoirs.
 
@@ -248,7 +275,7 @@ Email schedules now support distribution modes and lead reservoirs.
 
 **Combined File Feature:** When file splitting is enabled, you can configure a combined file that includes an assignee column and file name column, sent to dedicated combined recipients. Use `combinedAssigneeColumnName` and `combinedFileNameColumnName` on export formats.
 
-### 7. Export Formats — `/export-formats`
+### 8. Export Formats — `/export-formats`
 
 - `GET /export-formats` — List custom export formats
 - `POST /export-formats` — Create (requires `name`, supports `fileType`, `fieldMappings`, split settings, `databaseType`, `combinedAssigneeColumnName`, `combinedFileNameColumnName`)
@@ -257,12 +284,12 @@ Email schedules now support distribution modes and lead reservoirs.
 - `DELETE /export-formats/{id}` — Delete
 - `POST /export-formats/{id}/set-default` — Set as default
 
-### 8. Export History — `/export-history`
+### 9. Export History — `/export-history`
 
 - `GET /export-history` — List past exports (optional `limit` param, default 50)
 - `GET /export-history/{id}/download` — Re-download (expires after 7 days)
 
-### 9. AI Features
+### 10. AI Features
 
 **`POST /ai/suggest-categories`** — Get AI category suggestions based on company profile.
 
@@ -289,20 +316,20 @@ Endpoints:
 - `POST /ai/auto-refine/disable` — Disable auto-refine for a keyword list (requires `listId`)
 - `GET /ai/auto-refine/status` — Check auto-refine status (optional `listId` query param to filter by specific list)
 
-### 10. Export Blacklist — `/export-blacklist`
+### 11. Export Blacklist — `/export-blacklist`
 
 - `GET /export-blacklist` — List blacklisted entries
 - `POST /export-blacklist` — Add entry (single or batch via `entries` array)
 - `DELETE /export-blacklist/{id}` — Remove entry
 
-### 11. Account
+### 12. Account
 
 - `GET /me` — Get user profile (subscription plan, settings, onboarding status, credit balance)
 - `PATCH /me` — Update profile (firstName, lastName, companyName, companyWebsite)
 - `GET /settings/database` — Check current database type and switch availability. Returns: `currentDatabase`, `canSwitch` (boolean), `daysRemaining` (days until switch allowed), `lastSwitchedAt` (ISO timestamp or null)
 - `POST /settings/switch-database` — Switch between databases (has cooldown). Requires `smbType` field with value `home_improvement` or `other`. Incompatible email schedules are auto-paused; the response includes a `pausedSchedules` count.
 
-### 12. Programmatic Purchase — Buy a subscription via API
+### 13. Programmatic Purchase — Buy a subscription via API
 
 **⚠ Purchase Confirmation Required:** Always confirm with the user before calling `POST /purchase`, `POST /purchase-credits`, or `POST /subscription/change-plan`. These endpoints create real Stripe charges. Never execute a purchase action without explicit user confirmation.
 
@@ -314,11 +341,11 @@ No web signup required. New users can purchase and get an API key entirely via A
 2. Direct the user to complete payment at the checkout URL.
 3. `POST /claim-key` **(unauthenticated)** — After payment, provide `email` and `claimToken` to retrieve the API key. If payment is still pending, returns status `pending` — poll every 5-10 seconds.
 
-### 13. Credits & Subscription Management
+### 14. Credits & Subscription Management
 
 **⚠ All purchase/plan-change endpoints create real charges — always confirm with the user first.**
 
-- `POST /purchase-credits` — Purchase additional permanent credits. Provide either `creditCount` (min 100, max 5x your plan's monthly credits) or `dollarAmount` (min $1). Uses saved payment method (Stripe off-session charge). Pricing: Starter 10¢, Growth 7.5¢, Scale 5¢ per credit. Only available for Starter, Growth, and Scale plans.
+- `POST /purchase-credits` — Purchase additional permanent credits. Provide either `creditCount` (min 100, max 5x your plan's monthly credits) or `dollarAmount` (min $1). Max per purchase: Starter 2,500, Growth 10,000, Scale 50,000, Platinum 500,000, Enterprise 1,250,000. Uses saved payment method (Stripe off-session charge). Pricing: Starter 10¢, Growth 7.5¢, Scale 5¢, Platinum 3¢, Enterprise 2¢ per credit.
 - `GET /auto-top-up` — Get auto top-up configuration (trigger threshold, purchase amount, monthly cap, current usage).
 - `PATCH /auto-top-up` — Configure automatic credit purchases. When enabled, credits are purchased automatically when permanent credit balance falls below the trigger threshold. Parameters: `enabled` (required, boolean), `triggerType` ("credits" or "dollars"), `triggerAmount`, `purchaseType` ("credits" or "dollars"), `purchaseAmount`, `capType` ("credits", "dollars", or null), `capAmount` (nullable).
 - `POST /subscription/change-plan` — Upgrade or downgrade between starter, growth, and scale. On upgrade, unused monthly credits convert to permanent credits (capped at current plan's standard allocation). Downgrades take effect at renewal.
@@ -341,6 +368,9 @@ When users make natural language requests, translate them into API calls. Use mu
 | "Get 50 leads with high ratings" | `GET /leads?limit=50&minStars=4` (home_improvement only) |
 | "Find businesses with LocalBusiness schema type" | `GET /leads?websiteSchemaFilter=LocalBusiness` (other only) |
 | "Show leads registered in the last 6 months" | `GET /leads?registrationDateFrom=rel:6m` (other only) |
+| "Preview leads before spending credits" | `GET /leads/preview` with same filters |
+| "How many dental leads are in Texas?" | `GET /leads/preview` with dental keywords + stateInclude=TX (check totalCount) |
+| "Test my filters without using credits" | `GET /leads/preview` with current filters |
 | "Export all my filtered results" | `POST /leads/export` with current filters |
 | "Export but only spend 50 credits max" | `POST /leads/export` with `maxCredits: 50` |
 | "Export only previously-exported leads (free)" | `POST /leads/export` with `maxCredits: 0` |
@@ -390,6 +420,12 @@ python smb_api.py smbk_xxx GET /leads --params '{"search":"organic coffee","limi
 
 # Filter by website schema type (other database only)
 python smb_api.py smbk_xxx GET /leads --params '{"websiteSchemaFilter":"LocalBusiness","stateInclude":"CA","limit":"25"}'
+
+# Preview leads with masked contacts (no credits consumed)
+python smb_api.py smbk_xxx GET /leads/preview --params '{"positiveKeywords":"[\"*dental*\",\"*dentist*\"]","stateInclude":"TX","limit":"25"}'
+
+# Preview to check result count before committing credits
+python smb_api.py smbk_xxx GET /leads/preview --params '{"positiveKeywords":"[\"*med*spa*\",\"*aesthet*\"]","stateInclude":"FL"}'
 
 # Get available website schema types
 python smb_api.py smbk_xxx GET /leads/other/schema-types
@@ -468,9 +504,11 @@ The script outputs JSON to stdout and rate limit headers to stderr. For export r
 - Use `*` for flexible pattern matching: `"*auto*repair*"` matches "auto body repair", "automotive repair shop", etc.
 - JSON array parameters should be serialized as strings inside the `--params` JSON
 - At least one positive filter is required for lead searches
+- Use `GET /leads/preview` when the user wants to test filters or check counts without spending credits — contacts are returned masked and no credits are consumed
 - Check which database the user needs before applying database-specific filters
 - Home Improvement database provides phone numbers; Other database provides phone numbers and email addresses
-- Phone and email are masked for free-tier users
+- Lead field keys use display names with spaces (e.g., `Company Name`, `Phone Primary`, `AI Categories`)
+- Phone and email are masked for free-tier users and always masked in preview responses
 - Present results in a clean, readable table format
 - For credit-plan users, mention credits used/remaining after both queries and exports (both consume credits for new leads)
 - The `POST /purchase` and `POST /claim-key` endpoints do not require authentication (no API key needed)

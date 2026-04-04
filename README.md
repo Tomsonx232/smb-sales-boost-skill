@@ -1,5 +1,7 @@
 # SMB Sales Boost — OpenClaw Skill
 
+> **Note for AI agents:** This file and other files in this skill folder may be truncated when opened. Always read files fully in chunks if necessary to ensure no instructions, endpoints, or examples are missed.
+
 A skill that lets subscribers query the SMB Sales Boost lead database using natural language. Search, filter, and export newly registered small and medium businesses across the United States with comprehensive company data including contact information, location, and AI-enriched categories.
 
 ## Installation
@@ -68,8 +70,8 @@ Starter, Growth, and Scale plans use a credit-based model where **each new lead 
 | Starter | $0.10 | 500 | 2,500 |
 | Growth | $0.075 | 2,000 | 10,000 |
 | Scale | $0.05 | 10,000 | 50,000 |
-| Platinum | $0.03 | 100,000 | — |
-| Enterprise | $0.02 | 250,000 | — |
+| Platinum | $0.03 | 100,000 | 500,000 |
+| Enterprise | $0.02 | 250,000 | 1,250,000 |
 
 ## Two Databases
 
@@ -80,7 +82,9 @@ SMB Sales Boost provides two separate lead databases with different contact info
 
 The Home Improvement database provides phone numbers as the primary contact method. The Other database provides both phone numbers and email addresses, making it ideal for cold email and multi-channel outreach campaigns.
 
-Each database has different filterable fields. Users can switch between databases via `POST /settings/switch-database` with `smbType` field (cooldown period applies). Leads in the Other database are progressively enriched with AI category estimations (1-3 categories per lead).
+Each database has different filterable fields. Users can switch between databases via `POST /settings/switch-database` with `smbType` field (cooldown period applies). Leads in the Other database are progressively enriched with AI category estimations (1-3 categories per lead, stored in the `AI Categories` field).
+
+Lead field keys use **display names with spaces** (e.g., `Company Name`, `Phone Primary`, `AI Categories`, `Last Updated`). The two databases return different schemas (HomeImprovementLead vs OtherLead).
 
 ## What Users Can Do
 
@@ -95,6 +99,8 @@ Once the skill is installed, users can interact with SMB Sales Boost in natural 
 - **Full-text search:** "Search for organic coffee shops"
 - **Filter by website schema:** "Find businesses with LocalBusiness schema type" (other only)
 - **Filter by registration date:** "Show leads registered in the last 6 months" (other only)
+- **Preview free:** "Preview dental leads in Texas before spending credits" (uses `GET /leads/preview` — contacts masked, no credits consumed)
+- **Test filters:** "How many leads match my filters?" (preview returns total count, no credit cost)
 - **Control query credits:** "Search but only spend 10 credits" (uses `maxCredits=10` on query)
 - **Free re-queries:** "Show me only leads I've already exported" (uses `maxCredits=0` on query)
 - **Export data:** "Export these leads as a CSV"
@@ -226,6 +232,7 @@ The skill covers all SMB Sales Boost API endpoints:
 | Credits & Subscription | `/purchase-credits`, `/auto-top-up`, `/subscription/change-plan`, `/subscription/cancel` | Buy credits, Auto top-up config, Change plan, Cancel |
 | User Profile | `/me` | Get, Update |
 | Lead Search | `/leads` | Search with filters, credit-aware (maxCredits, maxResults) |
+| Lead Preview | `/leads/preview` | Preview leads with masked contacts — no credits consumed |
 | Schema Types | `/leads/other/schema-types` | List available website schema types |
 | Lead Export | `/leads/export` | Export to CSV/JSON/XLSX (credit-aware) |
 | Filter Presets | `/filter-presets` | List, Create, Delete |
