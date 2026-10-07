@@ -1,184 +1,1137 @@
 #!/usr/bin/env python3
 """
-SMB Sales Boost API Client
-Reusable script for making any API call. Pass method, endpoint, and optional params/body as arguments.
+SMB Sales Boost API client - part of the smb-sales-boost agent skill (v2.0.0).
 
-Requires: API key with smbk_ prefix (generate from Dashboard > API tab).
-          Set via SMB_SALES_BOOST_API_KEY env var or pass as first argument.
+One dependency-free command (Python 3.8+ standard library only) for every
+SMB Sales Boost REST API call. It handles authentication, parameter encoding,
+safe file saving, bounded retries and safety confirmations.
 
-Data Sensitivity: Exports may contain PII (business phone numbers, email addresses).
-                  Handle exported files with appropriate care.
+Authentication
+  Set the SMB_SALES_BOOST_API_KEY environment variable to your API key. Keys
+  start with smbk_ and are created in the dashboard (Dashboard > API). Passing
+  the key as the first argument still works for backward compatibility, but it
+  is discouraged: command lines can be seen by other local processes and are
+  often written to logs.
 
-Usage:
-  python smb_api.py <API_KEY> <METHOD> <ENDPOINT> [--params '{"key":"value"}'] [--body '{"key":"value"}'] [--output-dir /path/to/dir]
+Usage
+  python3 smb_api.py METHOD ENDPOINT [options]
 
-Examples:
-  python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\",\"*dentist*\",\"*orthodont*\"]","stateInclude":"TX","limit":"10"}'
-  python smb_api.py smbk_xxx GET /leads/preview --params '{"positiveKeywords":"[\"*dental*\",\"*dentist*\"]","stateInclude":"TX","limit":"25"}'
-  python smb_api.py smbk_xxx GET /me
-  python smb_api.py smbk_xxx POST /leads/export --body '{"database":"other","filters":{"positiveKeywords":["*med*spa*","*aesthet*","*botox*"],"stateInclude":"FL"},"maxCredits":100}'
-  python smb_api.py smbk_xxx POST /ai/suggest-categories --body '{"companyName":"FitPro Supply","companyDescription":"Commercial fitness equipment","productService":"Gym equipment, treadmills"}'
-  python smb_api.py smbk_xxx POST /ai/auto-refine/enable --body '{"listId":42}'
-  python smb_api.py smbk_xxx GET /ai/auto-refine/status --params '{"listId":"42"}'
-  python smb_api.py smbk_xxx GET /ai/keyword-status
-  python smb_api.py smbk_xxx POST /email-schedules/15/trigger
-  python smb_api.py smbk_xxx POST /filter-presets --body '{"name":"NY Bakeries","filters":{"positiveKeywords":["*bakery*","*cater*","*pastry*"],"stateInclude":"NY"}}'
-  python smb_api.py smbk_xxx DELETE /filter-presets/42
-  python smb_api.py smbk_xxx POST /purchase-credits --body '{"creditCount":500}'
-  python smb_api.py smbk_xxx POST /subscription/change-plan --body '{"targetPlan":"growth"}'
-  python smb_api.py smbk_xxx POST /subscription/cancel
-  python smb_api.py none POST /purchase --body '{"email":"user@example.com","plan":"starter"}'
-  python smb_api.py none POST /claim-key --body '{"email":"user@example.com","claimToken":"tok_abc123"}'
-  python smb_api.py smbk_xxx GET /leads/other/schema-types
-  python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\"]","stateInclude":"TX","maxCredits":"10"}'
-  python smb_api.py smbk_xxx GET /auto-top-up
-  python smb_api.py smbk_xxx PATCH /auto-top-up --body '{"enabled":true,"triggerType":"credits","triggerAmount":100,"purchaseType":"credits","purchaseAmount":500}'
-  python smb_api.py smbk_xxx POST /settings/switch-database --body '{"smbType":"other"}'
-  python smb_api.py smbk_xxx GET /settings/database
+  METHOD    GET, POST, PATCH, PUT or DELETE
+  ENDPOINT  a path below https://smbsalesboost.com/api/v1, for example /leads
+
+Options
+  --params JSON        query parameters as a JSON object (any method). Lists may
+                       be given as real JSON arrays; they are encoded the way
+                       each parameter expects.
+  --params-file PATH   read the query parameters from a JSON file ("-" = stdin)
+  --body JSON          request body as a JSON object (POST, PATCH, PUT)
+  --body-file PATH     read the request body from a JSON file ("-" = stdin)
+  --confirm            required for calls that charge money, send email, spend
+                       credits on enrichment or delete data. Add it only after
+                       the user has explicitly approved that exact action.
+  --dry-run            print the request that would be sent, then exit
+  --output-dir DIR     folder for downloaded and exported files (default:
+                       $SMB_SALES_BOOST_OUTPUT_DIR, else /mnt/user-data/outputs
+                       when it exists, else ./smb-sales-boost-files)
+  --out NAME           also save the full JSON response as NAME.json in the
+                       output folder (useful for large lead searches)
+  --compact            print lead results as a short summary of key fields
+  --idempotency-key K  for POST /purchase-credits: reuse the key printed by a
+                       call that timed out; Stripe does not charge the same key
+                       twice for about 24 hours
+  --timeout SEC        network timeout in seconds (default 180)
+  --no-retry           do not retry after 429 or 503 responses
+  --no-fetch           for download-link endpoints, print the link instead of
+                       downloading the file
+
+Examples
+  export SMB_SALES_BOOST_API_KEY=smbk_...
+  python3 smb_api.py GET /me
+  python3 smb_api.py GET /leads/preview --params '{"positiveKeywords":["*dental*","*dentist*"],"stateInclude":["TX"],"limit":25}'
+  python3 smb_api.py GET /leads --params '{"positiveKeywords":["*dental*"],"stateInclude":["TX"],"limit":25,"maxCredits":25}' --compact
+  python3 smb_api.py POST /leads/export --body '{"filters":{"positiveKeywords":["*med*spa*"],"stateInclude":["FL"]},"maxCredits":100}'
+  python3 smb_api.py GET /export-history/412/download
+  python3 smb_api.py POST /purchase-credits --body '{"creditCount":500}' --confirm
+
+Exit codes
+  0 success, 1 API error (or an unexpected client error), 2 usage error or
+  confirmation required (nothing sent), 3 network error or timeout,
+  4 local file error (checked before anything is sent)
 """
 
-import sys
+import argparse
+import base64
+import binascii
+import http.client
 import json
 import os
-import base64
-import argparse
-import requests
+import re
+import secrets
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 
-BASE_URL = "https://smbsalesboost.com/api/v1"
-SAFE_EXTENSIONS = {".csv", ".json", ".xlsx"}
-DEFAULT_OUTPUT_DIR = "/mnt/user-data/outputs"
+__version__ = "2.0.0"
 
-# Endpoints that do not require authentication
-UNAUTHENTICATED_ENDPOINTS = {"/purchase", "/claim-key"}
+API_ORIGIN = "https://smbsalesboost.com"
+API_PREFIX = "/api/v1"
+USER_AGENT = "smb-sales-boost-skill/%s (+https://github.com/Tomsonx232/smb-sales-boost-skill)" % __version__
+
+ENV_API_KEY = "SMB_SALES_BOOST_API_KEY"
+ENV_OUTPUT_DIR = "SMB_SALES_BOOST_OUTPUT_DIR"
+SANDBOX_OUTPUT_DIR = "/mnt/user-data/outputs"
+FALLBACK_OUTPUT_DIR = "smb-sales-boost-files"
+
+METHODS = ("GET", "POST", "PATCH", "PUT", "DELETE")
+DEFAULT_TIMEOUT = 180
+MAX_ATTEMPTS = 3
+MAX_RETRY_WAIT_SECONDS = 60
+CHUNK_SIZE = 65536
+
+SAFE_EXTENSIONS = (".csv", ".json", ".xlsx")
+EXTENSION_BY_FILE_TYPE = {"csv": ".csv", "json": ".json", "xlsx": ".xlsx"}
+EXTENSION_BY_CONTENT_TYPE = {
+    "text/csv": ".csv",
+    "application/json": ".json",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+}
+
+# These two endpoints are public: an API key is never sent to them.
+PUBLIC_ENDPOINTS = ("/purchase", "/claim-key")
+# Presigned download links are only ever fetched from Amazon S3 hosts, over HTTPS.
+PRESIGNED_HOST_RE = re.compile(r"(?:[a-z0-9.-]+\.)?s3(?:[.-][a-z0-9-]+)*\.amazonaws\.com")
+
+# Query parameters that take a comma-separated list rather than a JSON array.
+COMMA_LIST_PARAMS = frozenset([
+    "stateInclude", "stateExclude", "websiteSchemaFilter",
+    "buyingSignalTypeFilter", "updateReasonFilter",
+])
+# Export filter keys whose plain-string form is split on commas.
+EXPORT_SPLIT_KEYS = COMMA_LIST_PARAMS | frozenset([
+    "cityInclude", "cityExclude", "zipInclude", "zipExclude", "streetInclude", "streetExclude",
+])
+# Export filter keys that also accept a string, so they are left alone.
+EXPORT_STRING_OK_KEYS = frozenset(["positiveKeywords", "negativeKeywords", "orColumns"])
+# Every other export filter with one of these suffixes must be a real JSON array.
+EXPORT_LIST_SUFFIXES = ("Include", "Exclude", "IncludeTerms", "ExcludeTerms", "Values")
+EXPORT_INT_KEYS = ("maxLeads", "maxResults", "maxCredits")
+EXPORT_BOOL_KEYS = ("excludePurchased", "inline")
+
+COMPACT_FIELDS = (
+    "id", "Company Name", "City", "State", "Phone Primary", "Email Primary",
+    "Registered URL", "AI Categories", "Last Buying Signal", "Buying Signal Type",
+    "contactExported",
+)
+
+HEADERS_TO_REPORT = (
+    "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
+    "Retry-After", "X-Credits-Capped", "X-Lead-Query-Path",
+)
+
+EXPORT_RE = re.compile(r"/leads/export")
+HISTORY_LINK_RE = re.compile(r"/export-history/(\d+)/download-url")
+ENRICHMENT_LINK_RE = re.compile(r"/enrichments/(\d+)/download")
+TRIGGER_RE = re.compile(r"/email-schedules/\d+/trigger")
+SCHEDULE_RECIPIENT_KEYS = ("recipients", "fullCopyRecipients", "combinedRecipients", "combinedFileEnabled")
+SCHEDULE_SEARCH_KEYS = ("filterPresetId", "maxLeadsPerEmail")
+SCHEDULE_RE = re.compile(r"/email-schedules/\d+")
 
 
-def make_request(api_key, method, endpoint, params=None, body=None):
-    """Make an authenticated API request and return the response."""
-    url = f"{BASE_URL}{endpoint}"
-    headers = {"Content-Type": "application/json"}
-
-    # Only include Authorization header if the endpoint requires it
-    # and a real API key is provided (not "none" placeholder)
-    if endpoint not in UNAUTHENTICATED_ENDPOINTS and api_key.lower() != "none":
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    method = method.upper()
-    if method == "GET":
-        resp = requests.get(url, headers=headers, params=params or {})
-    elif method == "POST":
-        resp = requests.post(url, headers=headers, json=body)
-    elif method == "PATCH":
-        resp = requests.patch(url, headers=headers, json=body)
-    elif method == "PUT":
-        resp = requests.put(url, headers=headers, json=body)
-    elif method == "DELETE":
-        resp = requests.delete(url, headers=headers)
-    else:
-        print(json.dumps({"error": f"Unsupported method: {method}"}))
-        sys.exit(1)
-
-    return resp
+class UsageError(Exception):
+    """Bad command line or input; nothing was sent."""
 
 
-def save_export_files(data, output_dir):
-    """Safely save base64-encoded export files with filename sanitization.
-
-    Security measures:
-    - os.path.basename() strips directory traversal components (e.g., ../../etc/passwd -> passwd)
-    - Extension validated against allowlist (.csv, .json, .xlsx only)
-    - Files written only to the designated output_dir, never to API-specified paths
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    saved = []
-
-    for file_entry in data.get("data", {}).get("files", []):
-        # Sanitize filename: strip path components to prevent path traversal
-        raw_name = file_entry.get("fileName", "export.csv")
-        safe_name = os.path.basename(raw_name)
-
-        # Validate extension against allowlist
-        _, ext = os.path.splitext(safe_name)
-        if ext.lower() not in SAFE_EXTENSIONS:
-            safe_name = safe_name + ".csv"
-
-        # Write only to designated output directory
-        output_path = os.path.join(output_dir, safe_name)
-        with open(output_path, "wb") as f:
-            f.write(base64.b64decode(file_entry["data"]))
-
-        saved.append({"fileName": safe_name, "path": output_path, "size": file_entry.get("size", 0)})
-
-    return saved
+class LocalFileError(Exception):
+    """A file could not be written locally."""
 
 
-def main():
-    parser = argparse.ArgumentParser(description="SMB Sales Boost API Client")
-    parser.add_argument("api_key", nargs="?", default=None, help="API key (smbk_... prefix), or 'none' for unauthenticated endpoints. Falls back to SMB_SALES_BOOST_API_KEY env var.")
-    parser.add_argument("method", help="HTTP method: GET, POST, PATCH, PUT, DELETE")
-    parser.add_argument("endpoint", help="API endpoint path, e.g. /leads, /me, /filter-presets")
-    parser.add_argument("--params", default=None, help="Query parameters as JSON string (for GET requests)")
-    parser.add_argument("--body", default=None, help="Request body as JSON string (for POST/PATCH/PUT)")
-    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directory for saving export files")
-    args = parser.parse_args()
+class NetworkError(Exception):
+    """The request did not complete (timeout, dropped connection, DNS, TLS)."""
 
-    # Resolve API key: CLI arg > env var > error
-    api_key = args.api_key or os.environ.get("SMB_SALES_BOOST_API_KEY")
-    if not api_key:
-        print(json.dumps({"error": "No API key provided. Pass as first argument or set SMB_SALES_BOOST_API_KEY env var."}))
-        sys.exit(1)
 
-    params = json.loads(args.params) if args.params else None
-    body = json.loads(args.body) if args.body else None
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Never follow redirects, so an API key is never forwarded to another host."""
 
-    resp = make_request(api_key, args.method, args.endpoint, params=params, body=body)
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
-    # Try to parse response as JSON
+
+_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+
+
+# --------------------------------------------------------------------------
+# Output helpers
+# --------------------------------------------------------------------------
+
+def emit(obj):
+    """Print a JSON document to stdout."""
+    print(json.dumps(obj, indent=2, ensure_ascii=False))
+
+
+def note(message):
+    """Print an advisory line to stderr (never mixed into the JSON on stdout)."""
+    print("note: " + message, file=sys.stderr)
+
+
+def _configure_stdio():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
+
+# --------------------------------------------------------------------------
+# Input parsing and normalization
+# --------------------------------------------------------------------------
+
+def load_json_arg(text, path, label):
+    """Read a JSON object from --X or --X-file. Returns None when neither is given."""
+    if text is not None and path is not None:
+        raise UsageError("use either --%s or --%s-file, not both" % (label, label))
+    if path is not None:
+        try:
+            if path == "-":
+                raw = sys.stdin.buffer.read() if hasattr(sys.stdin, "buffer") else sys.stdin.read().encode("utf-8")
+            else:
+                with open(path, "rb") as handle:
+                    raw = handle.read()
+        except OSError as exc:
+            raise UsageError("could not read --%s-file: %s" % (label, exc))
+        try:
+            # Windows PowerShell writes UTF-16 with a byte-order mark, or UTF-8 with a BOM.
+            if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+                text = raw.decode("utf-16")
+            else:
+                text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise UsageError("--%s-file must be saved as UTF-8 text" % label)
+    if text is None:
+        return None
     try:
-        data = resp.json()
+        value = json.loads(text)
+    except ValueError as exc:
+        raise UsageError("--%s is not valid JSON: %s" % (label, exc))
+    if not isinstance(value, dict):
+        raise UsageError("--%s must be a JSON object, for example {\"limit\": 25}" % label)
+    return value
+
+
+def normalize_endpoint(raw):
+    """Return (path, query_pairs). The path is relative to /api/v1 and strictly validated."""
+    text = (raw or "").strip()
+    if text.startswith(API_ORIGIN):
+        text = text[len(API_ORIGIN):]
+    path, _, query = text.partition("?")
+    # Every API path is lower case and the server matches paths without regard to case,
+    # so normalize here to keep the --confirm, public-endpoint and idempotency checks exact.
+    path = path.lower()
+    if not path.startswith("/"):
+        path = "/" + path
+    if path == API_PREFIX or path.startswith(API_PREFIX + "/"):
+        path = path[len(API_PREFIX):] or "/"
+    if len(path) > 1:
+        path = path.rstrip("/")
+    if "//" in path or not re.fullmatch(r"/[A-Za-z0-9/_-]*", path):
+        raise UsageError(
+            "invalid endpoint %r: use a path such as /leads or /export-history/12/download "
+            "and pass query parameters with --params" % raw)
+    return path, urllib.parse.parse_qsl(query, keep_blank_values=True)
+
+
+def _split_list_string(text):
+    stripped = text.strip()
+    if stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _is_list_param(key):
+    """Parameters the API reads as a JSON array (everything except the comma-separated ones)."""
+    return key not in COMMA_LIST_PARAMS and (key in EXPORT_STRING_OK_KEYS or key.endswith(EXPORT_LIST_SUFFIXES))
+
+
+def _as_list(value):
+    """A list parameter given as one value: parse a JSON-array string, else split on commas and trim."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+            except ValueError:
+                parsed = None
+            if isinstance(parsed, list):
+                return parsed
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return [value]
+
+
+def _list_items(items):
+    """Numbers inside a list are sent as text (ZIP codes and similar are stored as text)."""
+    return [item if isinstance(item, (str, dict)) else str(item) for item in items]
+
+
+def encode_query(params, notes):
+    """Encode query parameters the way the SMB Sales Boost API expects them."""
+    pairs = []
+    for key, value in params.items():
+        if value is None:
+            continue
+        if _is_list_param(key) and isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            if not isinstance(value, str) or "," in value:
+                notes.append("%s: sent as a JSON array (the API ignores a bare value such as a single "
+                             "ZIP code, and does not trim comma-separated items)" % key)
+            value = _as_list(value)
+        if isinstance(value, bool):
+            pairs.append((key, "true" if value else "false"))
+        elif isinstance(value, (int, float)):
+            if isinstance(value, float) and value.is_integer():
+                value = int(value)
+            pairs.append((key, str(value)))
+        elif isinstance(value, (list, tuple)):
+            if key in COMMA_LIST_PARAMS:
+                pairs.append((key, ",".join(str(item).strip() for item in value)))
+            else:
+                pairs.append((key, json.dumps(_list_items(value), ensure_ascii=False, separators=(",", ":"))))
+        elif isinstance(value, dict):
+            pairs.append((key, json.dumps(value, ensure_ascii=False, separators=(",", ":"))))
+        else:
+            text = str(value)
+            if key in COMMA_LIST_PARAMS and text.strip().startswith("["):
+                items = _split_list_string(text)
+                notes.append("%s: converted a JSON-array string to the comma-separated form this "
+                             "parameter needs" % key)
+                text = ",".join(items)
+            pairs.append((key, text))
+    return pairs
+
+
+def _normalize_filter_value(key, value, notes):
+    is_list_key = key in EXPORT_SPLIT_KEYS or key.endswith(EXPORT_LIST_SUFFIXES)
+    if is_list_key and isinstance(value, (int, float)) and not isinstance(value, bool):
+        notes.append("filters.%s: wrapped the number in an array (export filters ignore non-array values)" % key)
+        return [str(value)]
+    if is_list_key and isinstance(value, list):
+        return _list_items(value)
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, list):
+            if key not in EXPORT_STRING_OK_KEYS:
+                notes.append("filters.%s: converted a JSON-array string to a real array "
+                             "(export filters ignore the string form)" % key)
+            return parsed
+    if key in EXPORT_STRING_OK_KEYS:
+        return value
+    if key in EXPORT_SPLIT_KEYS:
+        notes.append("filters.%s: split the comma-separated string into an array" % key)
+        return _split_list_string(value)
+    if key.endswith(EXPORT_LIST_SUFFIXES):
+        notes.append("filters.%s: wrapped the string in an array (export filters ignore "
+                     "plain strings)" % key)
+        return [value]
+    return value
+
+
+EXPORT_TOP_LEVEL_KEYS = ("maxCredits", "maxResults", "maxLeads", "excludePurchased", "inline", "formatId")
+EXPORT_IGNORED_FILTER_KEYS = ("search", "page", "limit")
+
+
+def normalize_export_body(body, notes):
+    """Fix the input mistakes that would otherwise be silently ignored by POST /leads/export."""
+    filters = body.get("filters")
+    if isinstance(filters, dict):
+        for key in EXPORT_TOP_LEVEL_KEYS:
+            if key in filters:
+                value = filters.pop(key)
+                if body.get(key) is None:
+                    body[key] = value
+                    notes.append("moved filters.%s to the top level of the body (the export ignores it "
+                                 "inside filters)" % key)
+        ignored = [key for key in EXPORT_IGNORED_FILTER_KEYS if filters.get(key) not in (None, "")]
+        if ignored:
+            raise UsageError(
+                "POST /leads/export ignores filters.%s, so this export would match and charge for more "
+                "leads than intended. Remove it: use maxResults to limit the number of leads and keyword or "
+                "include-term filters to narrow the match." % ", filters.".join(ignored))
+    if "maxCredits" in body and body["maxCredits"] is None:
+        del body["maxCredits"]
+        notes.append("removed \"maxCredits\": null (the export treats it as no cap)")
+    ids = body.get("selectedIds")
+    if isinstance(ids, (str, int)) and not isinstance(ids, bool):
+        parts = _as_list(ids) if isinstance(ids, str) else [ids]
+        if parts and all(re.fullmatch(r"\d+", str(part).strip()) for part in parts):
+            body["selectedIds"] = [int(str(part).strip()) for part in parts]
+            notes.append("selectedIds: converted to an array of lead ids (the export ignores any other "
+                         "form and would export by filters instead)")
+        else:
+            raise UsageError("selectedIds must be an array of lead ids, for example [4521, 4522]")
+    for key in EXPORT_INT_KEYS:
+        value = body.get(key)
+        if isinstance(value, str) and re.fullmatch(r"\s*\d+\s*", value):
+            body[key] = int(value)
+            notes.append("%s: converted the string %r to a number" % (key, value))
+    for key in EXPORT_BOOL_KEYS:
+        value = body.get(key)
+        if isinstance(value, str) and value.strip().lower() in ("true", "false", "1", "0"):
+            body[key] = value.strip().lower() in ("true", "1")
+            notes.append("%s: converted the string %r to a boolean" % (key, value))
+    if isinstance(filters, dict):
+        for key in list(filters):
+            filters[key] = _normalize_filter_value(key, filters[key], notes)
+    return body
+
+
+# --------------------------------------------------------------------------
+# Safety rules
+# --------------------------------------------------------------------------
+
+def confirmation_reason(method, path, body):
+    """Why this call needs --confirm, or None when it does not."""
+    body = body if isinstance(body, dict) else {}
+    if method == "DELETE":
+        if path.startswith("/filter-presets/"):
+            return "it permanently deletes the preset AND every email schedule that uses it"
+        if path.startswith("/email-schedules/"):
+            return "it permanently deletes the schedule and its list of recipients who unsubscribed"
+        return "it permanently deletes data"
+    if method == "POST":
+        if path == "/purchase":
+            return "it starts a paid subscription checkout (the card is charged at checkout, or automatically when a free trial ends)"
+        if path == "/purchase-credits":
+            return ("it charges the card on file immediately, and the new credits restart every email schedule "
+                    "that was paused for insufficient credits (they email their recipients again at their next run)")
+        if path == "/subscription/change-plan":
+            return ("it changes the plan and can charge the card on file immediately; an upgrade, an early "
+                    "trial activation or a trial switch to a larger plan also restarts email schedules paused "
+                    "for insufficient credits")
+        if path == "/subscription/cancel":
+            return "it cancels the subscription"
+        if path == "/ai/generate-keywords":
+            return "it deletes ALL existing keyword lists before generating new ones"
+        if TRIGGER_RE.fullmatch(path):
+            return "it emails leads to the schedule's recipients right now and spends credits"
+        if path == "/email-schedules" and body.get("isActive", True) is not False:
+            return ("it creates an ACTIVE schedule that emails real recipients within about 15 minutes "
+                    "and spends credits (create it with \"isActive\": false to review it first)")
+        if path == "/enrichments":
+            return "it spends credits (1 per new database match, 0.1 per live fetch) and cannot be undone"
+    if method == "PATCH":
+        if path == "/overage-budget" and body.get("enabled") is True:
+            return ("it authorizes automatic daily charges to the card on file, and it restarts email schedules "
+                    "paused for insufficient credits (their leads can then be billed as overage)")
+        if path == "/auto-top-up" and body.get("enabled") is True:
+            return "it authorizes automatic future charges to the card on file"
+        if SCHEDULE_RE.fullmatch(path) and body.get("isActive") is True:
+            return "it activates a schedule that emails real recipients and spends credits"
+        if (SCHEDULE_RE.fullmatch(path) and body.get("isActive") is not False
+                and any(key in body for key in SCHEDULE_RECIPIENT_KEYS)):
+            return ("it changes who the schedule emails; if the schedule is active, the new recipients get "
+                    "leads at its next send (add \"isActive\": false to the same call to review it first)")
+        if (SCHEDULE_RE.fullmatch(path) and body.get("isActive") is not False
+                and any(key in body for key in SCHEDULE_SEARCH_KEYS)):
+            return ("it changes which leads the schedule sends and charges for at its next send if it is active "
+                    "(add \"isActive\": false to the same call to review it first)")
+    return None
+
+
+def pre_send_notes(method, path, query_keys, body):
+    notes = []
+    if method == "GET" and path == "/leads":
+        if "maxCredits" not in query_keys:
+            notes.append("no maxCredits: this search can spend 1 credit per new lead on the page "
+                         "(up to limit, default 100). Preview first with GET /leads/preview.")
+        if "excludePurchased" in query_keys:
+            notes.append("excludePurchased is ignored by GET /leads (it works on /leads/preview and /leads/export)")
+    if method == "POST" and path == "/leads/export" and isinstance(body, dict) and "maxCredits" not in body:
+        notes.append("no maxCredits: this export can spend up to your whole credit balance "
+                     "(plus any overage budget). Set maxCredits to cap it.")
+    if method == "POST" and path == "/enrichments" and isinstance(body, dict) and "maxCredits" not in body:
+        notes.append("no maxCredits: this enrichment run can spend up to your whole credit balance")
+    return notes
+
+
+ADVICE_AFTER_FAILURE = {
+    ("GET", "/leads"): (
+        "The server may still have finished and charged credits. Do not repeat it blindly: check "
+        "GET /me for the balance. Repeating the same search with maxCredits set to 0 returns any "
+        "leads that were already charged, free."),
+    ("POST", "/leads/export"): (
+        "Do not repeat this export: an export picks new leads first, so a repeat can charge again for "
+        "different leads. Check GET /export-history (newest entry) and GET /me. If it was charged, download "
+        "the file with GET /export-history/{id}/download, or re-run the same filters with maxCredits 0 and "
+        "no excludePurchased (returns only leads you already have, free), or use "
+        "POST /lead-export-history/re-export."),
+    ("POST", "/enrichments"): (
+        "A run may have been created and started spending credits. Check GET /enrichments with limit 5 "
+        "before submitting again."),
+    ("POST", "/subscription/change-plan"): (
+        "The plan change may have gone through and charged the card. Check GET /me before trying again."),
+    ("POST", "/purchase-credits"): (
+        "The purchase may have gone through. Retry within 24 hours only with the same --idempotency-key "
+        "(the same key is not charged twice in that window); later, check permanentCredits in GET /me "
+        "before buying again."),
+    ("POST", "/purchase"): (
+        "A checkout session may have been created. Do not start a second checkout; ask the user whether "
+        "the checkout link was opened."),
+    ("POST", "/lead-export-history/refresh-and-export"): (
+        "The snapshots may already have been refreshed. Retrying is free."),
+}
+
+
+def failure_advice(method, path):
+    if method == "POST" and TRIGGER_RE.fullmatch(path):
+        return ("The schedule may already have emailed its recipients and charged credits. Check "
+                "GET /email-schedules (lastSent and totalSentCount) before triggering it again.")
+    return ADVICE_AFTER_FAILURE.get((method, path))
+
+
+# --------------------------------------------------------------------------
+# HTTP
+# --------------------------------------------------------------------------
+
+def _retry_after_seconds(headers):
+    value = headers.get("Retry-After") if headers is not None else None
+    if value is None:
+        return None
+    try:
+        return max(0, int(float(value)))
     except ValueError:
-        # Binary response (e.g., file download)
-        print(json.dumps({"status": resp.status_code, "message": "Binary response received", "size": len(resp.content)}))
+        return None
+
+
+def perform(build, timeout, allow_retry):
+    """Send a request built by build(); retry only 429 and 503, which never have side effects."""
+    attempt = 0
+    while True:
+        attempt += 1
+        request = build()
+        try:
+            response = _OPENER.open(request, timeout=timeout)
+            status = response.status
+        except urllib.error.HTTPError as err:
+            response = err
+            status = err.code
+        except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+            reason = getattr(exc, "reason", None) or exc
+            raise NetworkError(str(reason))
+        if status in (429, 503) and allow_retry and attempt < MAX_ATTEMPTS:
+            wait = _retry_after_seconds(response.headers)
+            if wait is not None and wait <= MAX_RETRY_WAIT_SECONDS:
+                try:
+                    response.read()
+                    response.close()
+                except Exception:
+                    pass
+                note("HTTP %d, retrying in %d s (attempt %d of %d)" % (status, wait, attempt + 1, MAX_ATTEMPTS))
+                time.sleep(max(1, wait))
+                continue
+        return status, response
+
+
+def api_request_builder(method, path, query_pairs, api_key, body, extra_headers):
+    url = API_ORIGIN + API_PREFIX + path
+    if query_pairs:
+        url += "?" + urllib.parse.urlencode(query_pairs)
+    data = None
+    if method in ("POST", "PATCH", "PUT"):
+        data = json.dumps(body if body is not None else {}, ensure_ascii=False).encode("utf-8")
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json, */*;q=0.5"}
+    if api_key:
+        headers["Authorization"] = "Bearer " + api_key
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    headers.update(extra_headers)
+
+    def build():
+        return urllib.request.Request(url, data=data, headers=headers, method=method)
+
+    return url, build
+
+
+def read_body(response):
+    """Read a whole response body; an interrupted read becomes a NetworkError."""
+    try:
+        return response.read()
+    except (http.client.HTTPException, OSError) as exc:
+        raise NetworkError(str(exc) or exc.__class__.__name__)
+
+
+def report_headers(headers):
+    for name in HEADERS_TO_REPORT:
+        value = headers.get(name) if headers is not None else None
+        if value is not None:
+            print("%s: %s" % (name, value), file=sys.stderr)
+    if headers is None:
         return
+    if (headers.get("X-Credits-Capped") or "").lower() == "true":
+        note("results were cut to the credits you have available (X-Credits-Capped)")
+    if (headers.get("X-Lead-Query-Path") or "").lower() == "trigram":
+        note("this query ran on the slow path (up to about 110 s). Keyword, company name, URL, state "
+             "and city filters with the default sort keep searches fast.")
 
-    # Handle export responses — save files automatically
-    if args.endpoint == "/leads/export" and resp.ok and "files" in data.get("data", {}):
-        saved = save_export_files(data, args.output_dir)
-        output = {
-            "status": resp.status_code,
-            "leadCount": data["data"].get("leadCount"),
-            "exportId": data["data"].get("exportId"),
-            "databaseType": data["data"].get("databaseType"),
-            "creditsUsed": data["data"].get("creditsUsed"),
-            "creditsRemaining": data["data"].get("creditsRemaining"),
-            "overflowCount": data["data"].get("overflowCount"),
-            "maxLeads": data["data"].get("maxLeads"),
-            "maxResults": data["data"].get("maxResults"),
-            "maxCredits": data["data"].get("maxCredits"),
-            "savedFiles": saved
-        }
-        # Remove None values for cleaner output
-        output = {k: v for k, v in output.items() if v is not None}
-        print(json.dumps(output, indent=2))
-    elif resp.status_code == 402:
-        # Insufficient credits
-        print(json.dumps({
-            "status": 402,
-            "error": "insufficient_credits",
-            "message": data.get("message", "Insufficient credits. Use maxCredits/maxResults to limit usage, or purchase more credits."),
-            "data": data
-        }, indent=2))
+
+# --------------------------------------------------------------------------
+# Files
+# --------------------------------------------------------------------------
+
+class OutputDir(object):
+    def __init__(self, requested):
+        self.requested = requested
+        self._path = None
+
+    def path(self):
+        if self._path is None:
+            if self.requested:
+                directory = self.requested
+            elif os.environ.get(ENV_OUTPUT_DIR):
+                directory = os.environ[ENV_OUTPUT_DIR]
+            elif os.path.isdir(SANDBOX_OUTPUT_DIR) and os.access(SANDBOX_OUTPUT_DIR, os.W_OK):
+                directory = SANDBOX_OUTPUT_DIR
+            else:
+                directory = os.path.join(os.getcwd(), FALLBACK_OUTPUT_DIR)
+            directory = os.path.abspath(os.path.expanduser(directory))
+            try:
+                os.makedirs(directory, mode=0o700, exist_ok=True)
+            except OSError as exc:
+                raise LocalFileError("could not create the output folder %s: %s" % (directory, exc))
+            self._path = directory
+        return self._path
+
+
+def safe_filename(raw, default_ext):
+    """Strip any directory part, keep a conservative character set, force an allowed extension."""
+    name = os.path.basename(str(raw or "").replace("\\", "/"))
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name).lstrip(".")
+    if not name:
+        name = "smb-sales-boost-file"
+    root, ext = os.path.splitext(name)
+    if ext.lower() not in SAFE_EXTENSIONS:
+        root, ext = name, default_ext
+    root = root[:120] or "smb-sales-boost-file"
+    return root + ext.lower()
+
+
+def open_new_file(output_dir, name):
+    """Create a new file (mode 0600) without overwriting or following an existing path."""
+    directory = output_dir.path()
+    root, ext = os.path.splitext(name)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    for index in range(1000):
+        candidate = name if index == 0 else "%s-%d%s" % (root, index, ext)
+        path = os.path.join(directory, candidate)
+        try:
+            descriptor = os.open(path, flags, 0o600)
+        except FileExistsError:
+            continue
+        except OSError as exc:
+            raise LocalFileError("could not create %s: %s" % (path, exc))
+        return path, os.fdopen(descriptor, "wb")
+    raise LocalFileError("no free file name for %s in %s" % (name, directory))
+
+
+def write_bytes(output_dir, name, content):
+    path, handle = open_new_file(output_dir, name)
+    try:
+        with handle:
+            handle.write(content)
+    except OSError as exc:
+        raise LocalFileError("could not write %s: %s" % (path, exc))
+    return {"fileName": os.path.basename(path), "path": path, "bytes": len(content)}
+
+
+def _discard(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def stream_to_file(output_dir, response, name):
+    path, handle = open_new_file(output_dir, name)
+    size = 0
+    with handle:
+        while True:
+            try:
+                chunk = response.read(CHUNK_SIZE)
+            except (http.client.HTTPException, OSError) as exc:
+                handle.close()
+                _discard(path)
+                raise NetworkError("the download was interrupted (%s); no partial file was kept" % exc)
+            if not chunk:
+                break
+            try:
+                handle.write(chunk)
+            except OSError as exc:
+                handle.close()
+                _discard(path)
+                raise LocalFileError("could not write %s: %s" % (path, exc))
+            size += len(chunk)
+    return {"fileName": os.path.basename(path), "path": path, "bytes": size}
+
+
+def filename_from_disposition(value):
+    if not value:
+        return None
+    match = re.search(r"filename\*\s*=\s*([^']*)'[^']*'([^;]+)", value, re.I)
+    if match:
+        try:
+            return urllib.parse.unquote(match.group(2).strip().strip('"'), encoding=match.group(1) or "utf-8")
+        except LookupError:
+            pass
+    match = re.search(r'filename\s*=\s*"([^"]*)"', value, re.I) or re.search(r"filename\s*=\s*([^;]+)", value, re.I)
+    return match.group(1).strip() if match else None
+
+
+def content_type_of(headers):
+    return ((headers.get("Content-Type") if headers is not None else "") or "").split(";")[0].strip().lower()
+
+
+def decode_inline_file(entry):
+    """POST /leads/export returns CSV and JSON as plain text and XLSX as base64."""
+    file_type = str(entry.get("fileType") or "").lower()
+    data = entry.get("data")
+    if file_type == "xlsx":
+        try:
+            return base64.b64decode(data or "", validate=True)
+        except (binascii.Error, TypeError, ValueError) as exc:
+            raise LocalFileError("the XLSX file data could not be decoded: %s" % exc)
+    if isinstance(data, str):
+        return data.encode("utf-8")
+    return json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+
+
+# --------------------------------------------------------------------------
+# Response handling
+# --------------------------------------------------------------------------
+
+class Context(object):
+    def __init__(self, args, method, path, api_key, output_dir):
+        self.args = args
+        self.method = method
+        self.path = path
+        self.api_key = api_key
+        self.output_dir = output_dir
+
+
+def download_api_path(ctx, link, name):
+    """Stream a file from an API path such as /api/v1/export-history/12/download (sends the key)."""
+    path, query = normalize_endpoint(link)
+    _, build = api_request_builder("GET", path, query, ctx.api_key, None, {})
+    status, response = perform(build, ctx.args.timeout, not ctx.args.no_retry)
+    if 200 <= status < 300:
+        saved = stream_to_file(ctx.output_dir, response, name)
+        saved["source"] = "export history"
+        return saved
+    raw = read_body(response)
+    try:
+        detail = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        detail = {"error": "http_%d" % status}
+    detail["httpStatus"] = status
+    return {"fileName": name, "error": detail}
+
+
+def download_presigned(ctx, url, name_hint):
+    """Fetch a presigned storage link WITHOUT the API key. HTTPS and the storage host only."""
+    parts = urllib.parse.urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not PRESIGNED_HOST_RE.fullmatch(host):
+        raise UsageError("refusing to download from an unexpected link host (%s)" % (host or "none"))
+
+    def build():
+        return urllib.request.Request(url, headers={"User-Agent": USER_AGENT}, method="GET")
+
+    status, response = perform(build, ctx.args.timeout, not ctx.args.no_retry)
+    if not 200 <= status < 300:
+        read_body(response)
+        return {"error": {"httpStatus": status, "message": "the download link was refused; request a new one"}}
+    server_name = filename_from_disposition(response.headers.get("Content-Disposition"))
+    ext = EXTENSION_BY_CONTENT_TYPE.get(content_type_of(response.headers), ".csv")
+    return stream_to_file(ctx.output_dir, response, safe_filename(server_name or name_hint, ext))
+
+
+def handle_export(ctx, data, headers):
+    payload = data.get("data") if isinstance(data, dict) else None
+    files = payload.get("files") if isinstance(payload, dict) else None
+    if not isinstance(files, list):
+        emit(data)
+        return 0
+    saved = []
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        file_type = str(entry.get("fileType") or "").lower()
+        name = safe_filename(entry.get("fileName"), EXTENSION_BY_FILE_TYPE.get(file_type, ".csv"))
+        try:
+            if entry.get("data") is not None:
+                result = write_bytes(ctx.output_dir, name, decode_inline_file(entry))
+            elif entry.get("downloadUrl"):
+                result = download_api_path(ctx, entry["downloadUrl"], name)
+            else:
+                result = {"fileName": name, "error": "the response had neither file data nor a download link"}
+        except (LocalFileError, NetworkError) as exc:
+            # The export is already paid for: report it and point at the free re-download.
+            result = {"fileName": name, "error": str(exc),
+                      "advice": "The export was charged. Download this file again with GET "
+                                "/export-history/{exportId}/download (kept 90 days); do not repeat the export."}
+        result["fileType"] = file_type or None
+        if entry.get("exportId") is not None:
+            result["exportId"] = entry.get("exportId")
+        saved.append(result)
+    summary = {"httpStatus": 200}
+    for key in ("leadCount", "exportId", "databaseType", "creditsUsed", "creditsRemaining",
+                "maxLeads", "overflowCount", "maxResults", "maxCredits"):
+        if payload.get(key) is not None:
+            summary[key] = payload.get(key)
+    if (headers.get("X-Credits-Capped") or "").lower() == "true":
+        summary["creditsCapped"] = True
+    summary["savedFiles"] = saved
+    emit(summary)
+    return 1 if any("error" in item for item in saved) else 0
+
+
+def handle_download_link(ctx, data, kind, run_id):
+    payload = data.get("data") if isinstance(data, dict) else None
+    link = payload.get("downloadUrl") if isinstance(payload, dict) else None
+    if not link:
+        emit(data)
+        return 0
+    if kind == "export":
+        file_type = str(payload.get("fileType") or "").lower()
+        name = safe_filename(payload.get("fileName"), EXTENSION_BY_FILE_TYPE.get(file_type, ".csv"))
     else:
-        # Standard JSON response — print it
-        print(json.dumps(data, indent=2))
+        name = "enrichment_%s.csv" % run_id
+    if link.startswith("/"):
+        result = download_api_path(ctx, link, name)
+    else:
+        result = download_presigned(ctx, link, name)
+    summary = {"httpStatus": 200}
+    summary.update({key: value for key, value in payload.items() if key != "downloadUrl"})
+    summary["downloadUrl"] = "(a short-lived link was used to download the file; it is not shown)"
+    summary["savedFile"] = result
+    emit(summary)
+    return 1 if "error" in result else 0
 
-    # Print rate limit info to stderr so it doesn't pollute JSON output
-    for header in ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"]:
-        if header in resp.headers:
-            print(f"{header}: {resp.headers[header]}", file=sys.stderr)
 
-    if not resp.ok:
-        sys.exit(1)
+def compact_view(data):
+    payload = data.get("data") if isinstance(data, dict) else None
+    leads = payload.get("leads") if isinstance(payload, dict) else None
+    if not isinstance(leads, list):
+        return data
+    view = {key: value for key, value in payload.items() if key != "leads"}
+    view["leads"] = [
+        {field: lead.get(field) for field in COMPACT_FIELDS if field in lead}
+        for lead in leads if isinstance(lead, dict)
+    ]
+    view["note"] = "Compact view of key fields only. Use --out to save every field."
+    return {"data": view}
+
+
+def save_json_copy(ctx, data):
+    root = os.path.splitext(os.path.basename(str(ctx.args.out)))[0]
+    name = safe_filename(root + ".json", ".json")
+    try:
+        result = write_bytes(ctx.output_dir, name, json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8"))
+    except LocalFileError as exc:
+        note("the --out copy was not saved: %s" % exc)
+        return
+    note("full response saved to %s" % result["path"])
+
+
+def handle_response(ctx, status, response):
+    headers = response.headers
+    report_headers(headers)
+    ok = 200 <= status < 300
+    disposition = (headers.get("Content-Disposition") if headers is not None else "") or ""
+    ctype = content_type_of(headers)
+
+    if ok and "attachment" in disposition.lower():
+        ext = EXTENSION_BY_CONTENT_TYPE.get(ctype, ".csv")
+        saved = stream_to_file(ctx.output_dir, response, safe_filename(filename_from_disposition(disposition), ext))
+        saved["contentType"] = ctype or None
+        emit({"httpStatus": status, "savedFile": saved})
+        return 0
+
+    raw = read_body(response)
+    try:
+        data = json.loads(raw.decode("utf-8")) if raw else None
+        is_json = True
+    except (ValueError, UnicodeDecodeError):
+        data, is_json = None, False
+
+    if not is_json:
+        if ok and ctype in EXTENSION_BY_CONTENT_TYPE:
+            saved = write_bytes(ctx.output_dir, safe_filename(None, EXTENSION_BY_CONTENT_TYPE[ctype]), raw)
+            emit({"httpStatus": status, "savedFile": saved})
+            return 0
+        text = re.sub(r"<[^>]+>", " ", raw.decode("utf-8", "replace"))
+        result = {
+            "httpStatus": status,
+            "error": "unexpected_response",
+            "message": "The server returned a non-JSON response.",
+            "contentType": ctype or None,
+            "bodyPreview": re.sub(r"\s+", " ", text).strip()[:300],
+        }
+        if status in (502, 504, 520, 522, 524):
+            result["message"] = ("The request timed out at the network edge (HTTP %d). The server may "
+                                 "still be working on it." % status)
+        advice = failure_advice(ctx.method, ctx.path)
+        if advice and status >= 500:
+            result["advice"] = advice
+        emit(result)
+        return 1
+
+    if not ok:
+        result = {"httpStatus": status}
+        if isinstance(data, dict):
+            result.update(data)
+        elif data is not None:
+            result["body"] = data
+        if 300 <= status < 400:
+            result["error"] = "redirect_not_followed"
+            result["message"] = ("The server answered with a redirect. This client never follows "
+                                 "redirects, so the API key is not sent anywhere else.")
+        advice = failure_advice(ctx.method, ctx.path)
+        if advice and status >= 500:
+            result["advice"] = advice
+        emit(result)
+        return 1
+
+    if ctx.method == "POST" and EXPORT_RE.fullmatch(ctx.path):
+        return handle_export(ctx, data, headers)
+    link_match = HISTORY_LINK_RE.fullmatch(ctx.path)
+    enrich_match = ENRICHMENT_LINK_RE.fullmatch(ctx.path)
+    if ctx.method == "GET" and (link_match or enrich_match) and not ctx.args.no_fetch:
+        if link_match:
+            return handle_download_link(ctx, data, "export", link_match.group(1))
+        return handle_download_link(ctx, data, "enrichment", enrich_match.group(1))
+    if ctx.method == "GET" and (link_match or enrich_match):
+        note("the downloadUrl works without an API key for a few minutes; do not share or log it")
+
+    payload = data.get("data") if isinstance(data, dict) else None
+    if isinstance(payload, dict) and payload.get("requiresKeywords"):
+        note("no positive filter was sent, so no leads were returned and no credits were used. Add "
+             "positiveKeywords (or nameIncludeTerms, urlIncludeTerms, crawledUrlIncludeTerms or "
+             "descriptionIncludeTerms).")
+    emit(compact_view(data) if ctx.args.compact else data)
+    if ctx.args.out:
+        save_json_copy(ctx, data)
+    return 0
+
+
+# --------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------
+
+def _timeout_seconds(text):
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a number of seconds")
+    if not 1 <= value <= 3600:
+        raise argparse.ArgumentTypeError("must be between 1 and 3600 seconds")
+    return value
+
+
+def parse_args(argv):
+    parser = argparse.ArgumentParser(
+        prog="smb_api.py",
+        description="SMB Sales Boost API client (skill version %s). See the module docstring for details." % __version__,
+    )
+    parser.add_argument("positionals", nargs="+", metavar="ARG",
+                        help="METHOD ENDPOINT (an API key may come first, but prefer the %s env var)" % ENV_API_KEY)
+    parser.add_argument("--params", default=None)
+    parser.add_argument("--params-file", default=None)
+    parser.add_argument("--body", default=None)
+    parser.add_argument("--body-file", default=None)
+    parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--out", default=None)
+    parser.add_argument("--compact", action="store_true")
+    parser.add_argument("--idempotency-key", default=None)
+    parser.add_argument("--timeout", type=_timeout_seconds, default=DEFAULT_TIMEOUT)
+    parser.add_argument("--no-retry", action="store_true")
+    parser.add_argument("--no-fetch", action="store_true")
+    parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
+    return parser.parse_intermixed_args(argv)
+
+
+def resolve_positionals(positionals):
+    if len(positionals) == 3:
+        key_arg, method, endpoint = positionals
+    elif len(positionals) == 2:
+        key_arg = None
+        method, endpoint = positionals
+    else:
+        raise UsageError("expected METHOD ENDPOINT, for example: GET /me")
+    method = method.upper()
+    if method not in METHODS:
+        raise UsageError("unsupported method: the first argument must be one of %s" % ", ".join(METHODS))
+    return key_arg, method, endpoint
+
+
+def run(args):
+    key_arg, method, endpoint = resolve_positionals(args.positionals)
+    path, endpoint_query = normalize_endpoint(endpoint)
+    params = load_json_arg(args.params, args.params_file, "params") or {}
+    body = load_json_arg(args.body, args.body_file, "body")
+    if body is not None and method in ("GET", "DELETE"):
+        raise UsageError("%s requests take --params, not --body" % method)
+
+    notes = []
+    if method == "POST" and EXPORT_RE.fullmatch(path) and isinstance(body, dict):
+        body = normalize_export_body(body, notes)
+    query_pairs = endpoint_query + encode_query(params, notes)
+    notes.extend(pre_send_notes(method, path, set(key for key, _ in query_pairs), body))
+
+    is_public = path in PUBLIC_ENDPOINTS
+    if key_arg is not None and key_arg.strip().lower() != "none":
+        api_key = clean_api_key(key_arg)
+        note("the API key was passed on the command line; prefer the %s environment variable" % ENV_API_KEY)
+    elif key_arg is not None:
+        api_key = None
+    else:
+        api_key = clean_api_key(os.environ.get(ENV_API_KEY))
+    if is_public:
+        api_key = None
+    if api_key and not api_key.startswith("smbk_"):
+        note("API keys normally start with smbk_; check that the right value is set")
+
+    extra_headers = {}
+    idempotency_key = None
+    if method == "POST" and path == "/purchase-credits":
+        body_key = (body or {}).get("idempotencyKey")
+        if args.idempotency_key and body_key not in (None, args.idempotency_key):
+            raise UsageError("the body idempotencyKey and --idempotency-key differ; use only one of them")
+        idempotency_key = args.idempotency_key or body_key or ("smbsk-" + secrets.token_hex(12))
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", str(idempotency_key)):
+            raise UsageError("--idempotency-key must be 8-64 characters of letters, digits, _ or -")
+        extra_headers["Idempotency-Key"] = idempotency_key
+        if isinstance(body, dict):
+            body["idempotencyKey"] = idempotency_key  # the server prefers the body value; keep them identical
+
+    reason = confirmation_reason(method, path, body)
+    url, build = api_request_builder(method, path, query_pairs, api_key, body, extra_headers)
+
+    for message in notes:
+        note(message)
+
+    if args.dry_run:
+        emit({
+            "dryRun": True,
+            "method": method,
+            "url": url,
+            "sendsApiKey": bool(api_key),
+            "body": body,
+            "confirmationRequired": reason,
+            "idempotencyKey": idempotency_key,
+        })
+        return 0
+
+    if reason and not args.confirm:
+        emit({
+            "error": "confirmation_required",
+            "message": ("Not sent: %s %s needs explicit approval because %s. Describe the action and its "
+                        "cost to the user, and re-run with --confirm only after they approve it."
+                        % (method, path, reason)),
+        })
+        return 2
+
+    if not api_key and not is_public:
+        raise UsageError("no API key: set the %s environment variable (keys start with smbk_)" % ENV_API_KEY)
+
+    if idempotency_key:
+        note("Idempotency-Key: %s (if this call times out, retry within 24 hours with --idempotency-key %s "
+             "so it is not charged twice)" % (idempotency_key, idempotency_key))
+
+    ctx = Context(args, method, path, api_key, OutputDir(args.output_dir))
+    if writes_files(args, method, path):
+        ctx.output_dir.path()  # create the folder now, so a folder problem stops us before anything is charged
+    try:
+        status, response = perform(build, args.timeout, not args.no_retry)
+    except NetworkError as exc:
+        return report_network_failure(method, path, idempotency_key, "The request did not complete: %s." % exc)
+    try:
+        return handle_response(ctx, status, response)
+    except NetworkError as exc:
+        return report_network_failure(method, path, idempotency_key, "The response was interrupted: %s." % exc)
+
+
+def clean_api_key(raw):
+    """Strip copy-paste whitespace; refuse anything that is not a plain key (never echo it)."""
+    key = (raw or "").strip()
+    if key and not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+        raise UsageError("the API key contains spaces, line breaks or other unexpected characters; "
+                         "copy it again from Dashboard > API (nothing was sent)")
+    return key or None
+
+
+def writes_files(args, method, path):
+    if args.out:
+        return True
+    if method == "POST" and (EXPORT_RE.fullmatch(path) or path in (
+            "/lead-export-history/re-export", "/lead-export-history/refresh-and-export")):
+        return True
+    if method == "GET" and path.endswith("/download"):
+        return True
+    return method == "GET" and bool(HISTORY_LINK_RE.fullmatch(path) or ENRICHMENT_LINK_RE.fullmatch(path)) \
+        and not args.no_fetch
+
+
+DEFAULT_FAILURE_ADVICE = (
+    "The request may still have reached the server. A GET is safe to repeat. Before repeating anything "
+    "else, check the current state with the matching GET (for example GET /email-schedules, "
+    "GET /filter-presets, GET /keyword-lists or GET /export-formats), because repeating a create can "
+    "make a duplicate.")
+
+
+def report_network_failure(method, path, idempotency_key, message):
+    result = {"error": "network_error", "message": message,
+              "advice": failure_advice(method, path) or DEFAULT_FAILURE_ADVICE}
+    if idempotency_key:
+        result["idempotencyKey"] = idempotency_key
+    emit(result)
+    return 3
+
+
+def main(argv=None):
+    _configure_stdio()
+    try:
+        args = parse_args(argv)
+    except SystemExit as exc:
+        return int(exc.code or 0)
+    try:
+        return run(args)
+    except UsageError as exc:
+        emit({"error": "usage_error", "message": str(exc)})
+        return 2
+    except LocalFileError as exc:
+        emit({"error": "local_file_error", "message": str(exc)})
+        return 4
+    except NetworkError as exc:
+        emit({"error": "network_error", "message": str(exc)})
+        return 3
+    except KeyboardInterrupt:
+        return 130
+    except Exception as exc:  # never print a traceback: it could include request headers
+        emit({"error": "internal_error", "message": "unexpected %s inside smb_api.py; nothing more is "
+                                                    "shown to avoid printing secrets" % exc.__class__.__name__})
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

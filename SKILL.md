@@ -1,6 +1,6 @@
 ---
 name: smb-sales-boost
-description: Query and manage leads from the SMB Sales Boost B2B lead database. Search newly registered businesses, filter by location/industry/keywords, export leads, manage filter presets, and use AI-powered category suggestions. Requires SMB_SALES_BOOST_API_KEY env var (smbk_... prefix). Exports contain PII (phone numbers, emails). Includes purchase endpoints that create real Stripe charges — always confirm with user.
+description: Find, preview and export growing local businesses (SMB leads) from the SMB Sales Boost database through its REST API - search by keyword, location and buying signals, preview for free, export CSV/JSON/XLSX, re-download past exports, enrich lists of website URLs, and manage saved searches, keyword lists, email schedules, credits and the subscription. Requires SMB_SALES_BOOST_API_KEY (smbk_...). Searches, exports and enrichments spend credits; purchases, plan changes, auto top-up and overage billing charge real money, so always confirm with the user first. Exported files contain business contact details (PII).
 metadata:
   {
     "openclaw":
@@ -11,531 +11,310 @@ metadata:
   }
 ---
 
-> **Note for AI agents:** This file and other files in this skill folder may be truncated when opened. Always read files fully in chunks if necessary to ensure no instructions, endpoints, or examples are missed.
+> **Note for AI agents:** This file and the other files in this skill folder may be truncated when opened. Always read them fully, in chunks if necessary, so that no rule, parameter or example is missed. Full parameter and field tables are in `REFERENCE.md` in this folder.
 
 # SMB Sales Boost Skill
 
-This skill enables natural language interaction with the SMB Sales Boost API — a B2B lead generation platform providing access to newly registered small and medium businesses across the United States.
+SMB Sales Boost is a B2B lead database of small and medium-sized businesses in the United States, built for sales teams that want to reach growing local businesses. Every lead carries a **Last Buying Signal**: the date something changed that makes the business worth contacting now (it was newly added, got a new primary phone, phone list, primary email, Tier 1 or Tier 2 email list or full address, or added or changed a social profile). **Buying Signal Type** says which of these happened.
+
+This skill lets you search, preview and export those leads, re-download past exports, enrich lists of website URLs, and manage the account, all through the REST API with the bundled `smb_api.py` script.
+
+- **Base URL:** `https://smbsalesboost.com/api/v1`
+- **One database:** every request is served from the Main database (`other`). Any `database` value you send resolves to it, so you never need to choose one.
+- **Who can use it:** accounts with an active or trialing Starter, Growth, Scale, Platinum or Enterprise subscription. Anyone else gets `403 forbidden`. New customers can subscribe through the API (see **Signing up through the API**).
+- **Reference files:** `REFERENCE.md` (every parameter, field, status and error), `openapi.json` (the published OpenAPI 3.1 spec; where it differs from this skill, follow this skill, which was checked against the live API).
 
 ## Setup
 
-The user must provide their API key. Keys have a `smbk_` prefix and are generated from the Dashboard > API tab. The key is passed as a Bearer token in the Authorization header of every request.
+1. The user creates an API key in the dashboard (Dashboard > API, https://smbsalesboost.com/dashboard?tab=api). Keys start with `smbk_`.
+2. The key must be in the `SMB_SALES_BOOST_API_KEY` environment variable. If it is not set, ask the user to set it. Do not ask them to paste the key into the chat, and never print, log or write the key to a file.
+3. Run every call through the bundled script (Python 3.8 or newer, standard library only, nothing to install):
 
-**Base URL:** `https://smbsalesboost.com/api/v1`
-
-**Important:** API access requires a Starter, Growth, Scale, Platinum, or Enterprise subscription plan. New users can purchase a subscription entirely via API using the Programmatic Purchase endpoints (no web signup required).
-
-**Data Sensitivity:** Exported leads contain business contact information including phone numbers and email addresses (PII). Exported files are saved to the agent's output directory by default. Handle exported files with appropriate care — do not share them in public channels or store them in unsecured locations.
-
-**Export File Location:** By default, `smb_api.py` saves exported files to the `--output-dir` path (defaults to `/mnt/user-data/outputs`). You can override this with the `--output-dir` flag to save files to a preferred secure location.
-
-## Authentication
-
-All requests must include:
-```
-Authorization: Bearer <API_KEY>
+```bash
+python3 smb_api.py METHOD ENDPOINT [--params '{json}'] [--body '{json}'] [options]
 ```
 
-If the user hasn't provided their API key yet, ask them for it before making any requests. Store it in a variable for reuse throughout the session.
+Run it from this skill's folder, or use its full path (for example `python3 ~/.claude/skills/smb-sales-boost/smb_api.py GET /me`). The script prints JSON to stdout and notes (rate-limit headers, warnings) to stderr. Do not hand-build `curl` commands; the script encodes parameters correctly, saves files safely and enforces the confirmation rules below.
 
-## Credit-Based System
+**Quoting user text safely:** `--params` and `--body` take JSON inside single quotes. If any value contains a single quote (for example a company name like `Joe's Bakery`), write the JSON to a file with your file tool and pass `--params-file PATH` or `--body-file PATH` instead. Never paste user text into a shell command unquoted.
 
-Starter, Growth, and Scale plans use a **credit-based model** for both **querying and exporting** leads:
+**Windows:** run the script with `py -3 smb_api.py` (or `python smb_api.py`) and always pass JSON through `--params-file` or `--body-file`. Command Prompt does not treat single quotes as quotes, and Windows PowerShell 5.1 removes the inner double quotes, so inline JSON fails there. The script reads UTF-8 files (with or without a byte-order mark) and UTF-16 files that start with a byte-order mark.
 
-- Each **new lead returned** by `GET /leads` (query) costs 1 credit
-- Each **net-new lead exported** by `POST /leads/export` costs 1 credit
-- **Previously-exported leads** are free to re-query or re-export (do not consume credits)
-- Both endpoints support `maxCredits` (cap credit spending) and `maxResults` (cap total leads) for credit-optimized ordering: new leads are sorted first, then previously-exported leads fill remaining slots
-- Set `maxCredits=0` on either endpoint to only receive previously-exported leads at no credit cost
-- Platinum and Enterprise plans are not credit-limited
+## Rules for every session
 
-**Credit Pricing (per credit):**
-| Plan | Cost per Credit | Monthly Credits | Max Purchase per Transaction |
-|------|----------------|----------------|------------------------------|
-| Starter | $0.10 | 500 | 2,500 |
-| Growth | $0.075 | 2,000 | 10,000 |
-| Scale | $0.05 | 10,000 | 50,000 |
-| Platinum | $0.03 | 100,000 | 500,000 |
-| Enterprise | $0.02 | 250,000 | 1,250,000 |
+1. **Real money: confirm first.** These calls charge, or authorize charges to, the card on file: `POST /purchase` (subscription checkout), `POST /purchase-credits`, `POST /subscription/change-plan` (an upgrade or an early trial activation charges immediately), and `PATCH /auto-top-up` or `PATCH /overage-budget` with `enabled: true` (automatic future charges). Before any of them, tell the user exactly what will happen and what it costs (amount and date), and wait for an explicit yes. **All charges are final; there are no refunds.** The script refuses these calls unless you add `--confirm`; add it only after the user has approved that exact action. Adding credits (a purchase, an upgrade, an early trial activation or a trial switch to a larger plan) or enabling the overage budget also restarts every email schedule that was paused for insufficient credits (with the overage budget, their leads can be billed to the card), so check `GET /email-schedules` and tell the user first.
+2. **Credits: preview first, cap every spend.** `GET /leads`, `POST /leads/export` and `POST /enrichments` spend credits. Run `GET /leads/preview` first (it is free) to check the match count and quality, keep `limit` small, and always pass `maxCredits`. After `GET /leads` or `POST /leads/export`, tell the user `creditsUsed` and the remaining balance: `creditsRemaining`, or `totalCreditsRemaining` from `GET /me` when the page came back empty (the field then shows 0). `POST /enrichments` returns neither: report `credits.total` from `GET /enrichments/{id}` (final once `credits.final` is true) and the balance from `GET /me`.
+3. **Email to real people: confirm first.** An active email schedule emails real recipients and spends credits, and `POST /email-schedules/{id}/trigger` sends immediately. Create schedules with `"isActive": false`, review them with the user, then activate. The script requires `--confirm` for creating an active schedule, activating one, triggering one, and changing the recipients, preset or `maxLeadsPerEmail` of a schedule that is not paused in the same call. Editing a keyword list (`PUT /keyword-lists/{id}`) or turning on auto-refine also changes what the schedules whose preset uses that list send, so check `GET /filter-presets` and pause those schedules first.
+4. **Destructive calls: confirm first.** `POST /ai/generate-keywords` deletes all of the user's keyword lists before generating new ones. Every `DELETE` is permanent, and deleting a filter preset also deletes the email schedules that use it. `POST /subscription/cancel` cancels the subscription. The script requires `--confirm` for all of these.
+5. **Never blindly repeat a call that may have charged.** If `GET /leads`, `POST /leads/export`, `POST /enrichments`, a schedule trigger, a plan change or a credit purchase fails with a 5xx, a timeout or a dropped connection, it may still have completed. Follow the `advice` field the script prints (check `GET /me`, `GET /export-history`, `GET /enrichments` or `GET /email-schedules` first). The script retries `429` and `503` responses by itself; those are always safe because nothing was done.
+6. **Protect personal data.** Results and files contain business phone numbers and email addresses. Keep files in the output folder, do not paste full lead lists into public channels, and only show the user what they asked for.
+7. **Stay on documented endpoints.** Use only the endpoints in this skill and `REFERENCE.md`. Integrations, API key management, billing details and undoing a cancellation are dashboard-only (see **Not available through the API**).
+8. **Data accuracy.** Contact details come from public sources and are not verified; revenue, employee and similar figures are estimates. Say so if the user is about to rely on them.
 
-**Credit balance fields** (from `GET /me`): `monthlyCredits`, `monthlyCreditsUsed`, `monthlyCreditsRemaining`, `permanentCredits`, `totalCreditsRemaining`, `creditOverageRate`
+## Plans and credits
 
-**Additional profile fields** (from `GET /me`): `totalLeadsExported` (all-time count), `monthlyLeadsExported` (current billing cycle), `autoTopUp` (nested object with `enabled`, `triggerType`, `triggerAmount`, `purchaseType`, `purchaseAmount`, `capType`, `capAmount`)
+Every plan is credit-based. One credit buys one new lead.
 
-Users can purchase additional permanent credits via `POST /purchase-credits` or configure automatic top-ups via `GET/PATCH /auto-top-up`.
+| Plan | Price / month | Monthly credits | Extra credits | Max credits per purchase | 14-day free trial |
+|---|---|---|---|---|---|
+| Starter | $49 | 500 | $0.10 each | 2,500 | Yes, 250 trial credits |
+| Growth | $149 | 2,000 | $0.075 each | 10,000 | Yes, 1,000 trial credits |
+| Scale | $499 | 10,000 | $0.05 each | 50,000 | Yes, 5,000 trial credits |
+| Platinum | $1,999 | 100,000 | $0.03 each | 500,000 | No |
+| Enterprise | $4,999 | 250,000 | $0.02 each | 1,250,000 | No |
 
-## Rate Limits
+How charging works:
 
-- General endpoints: 60 requests per minute
-- Export endpoints: 1 per 5 minutes
-- AI endpoints: 5 per minute
-- Programmatic purchase: 5 per hour per IP
-- Claim key: 30 per hour per IP
+- **1 credit per new lead** returned by `GET /leads` or exported by `POST /leads/export`.
+- **Free:** leads you have already received through any channel (dashboard, API, email schedules, enrichments), and new leads that share a primary phone or primary email with a lead you already received. Previews are always free.
+- **Automatic cap:** on every charged call, new leads come first and are cut to `min(maxCredits, your spendable balance)`; already-received leads fill the remaining slots for free. If your balance was the limit, the response has the header `X-Credits-Capped: true` (the script prints a note). Leads cut by a cap are dropped, not moved to the next page (exception: on `POST /leads/export` with `maxLeads`, they go to the reservoir and are added to your next `maxLeads` export, where new leads cost credits).
+- **Spending order:** temporary (promotional) credits, then the monthly allowance, then permanent credits (rolled-over and purchased), then the optional overage budget (billed to the card daily).
+- **Unused monthly credits roll over** into the permanent balance while the subscription stays active. Downgrading makes the whole remaining balance expire at the next renewal; cancelling forfeits it when the subscription ends.
+- **Auto top-up** (if the user enabled it) buys credits automatically when the permanent balance drops below a threshold, which charges the card.
+- `GET /me` is the authoritative balance: `totalCreditsRemaining` (temporary + monthly remaining + permanent), plus `monthlyCredits`, `monthlyCreditsUsed`, `monthlyCreditsRemaining`, `permanentCredits`, `temporaryCreditsRemaining` and `creditOverageRate` (cents per credit).
 
-Rate limit headers are returned on every response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`. If rate limited, check the `Retry-After` header for seconds to wait.
+**Free trial:** Starter, Growth and Scale start with a 14-day free trial. A payment method is required and nothing is charged until day 14 (the user's bank may show a temporary authorization that disappears within a few days); on day 14 the plan price is charged automatically unless the subscription is cancelled first. Trial credits are 50% of the plan's allowance and the full allowance is granted when the trial converts. One trial per person, checked by email address and payment method. During a trial the API works normally, except that auto top-up and the overage budget cannot be enabled. While `GET /me` shows `trial.isTrialing: true`, the plan price has not been charged yet (credits bought with `POST /purchase-credits` during the trial are charged immediately); `trial.firstChargeAmountCents` (the plan's list price; a discount on the account can make the actual charge lower) is charged on `trial.endsAt` unless the user cancels first.
 
-## Two Database Types
+## Finding leads: the standard workflow
 
-SMB Sales Boost has two separate databases with different contact information available:
+1. **Translate the request into filters.** Use several wildcard keyword variations (they are OR'ed): "dentists in Texas" becomes `positiveKeywords: ["*dental*", "*dentist*", "*orthodont*"]` and `stateInclude: ["TX"]`.
+2. **Preview (free):** `GET /leads/preview`. Read `data.pagination.total` for the match count and look at a few results (contacts are masked).
+3. **Agree on the spend:** tell the user how many leads match and that each new lead costs 1 credit.
+4. **Get the leads:** either `GET /leads` (results come back in the response, one page at a time) or `POST /leads/export` (a CSV, JSON or XLSX file; better for more than a few dozen leads). Always pass `maxCredits`. `GET /leads` does not apply the user's export blacklist (preview and export do), so leads from blacklisted domains can come back and are charged like any other new lead. If the user keeps an export blacklist, use `POST /leads/export`.
+5. **Report:** show results in a short table and state `creditsUsed` and the balance (`creditsRemaining`, or `GET /me` if the page was empty).
 
-1. **`home_improvement`** — Home improvement/contractor businesses with **phone numbers**, star ratings, review counts, review snippets, profile URLs, and categories
-2. **`other`** — General newly registered businesses with **phone numbers and email addresses**, registered URLs, crawled URLs, short/long descriptions, redirect status, and AI-enriched category estimations
+```bash
+# 1-2. Preview: free, contacts masked
+python3 smb_api.py GET /leads/preview --params '{"positiveKeywords":["*dental*","*dentist*","*orthodont*"],"stateInclude":["TX"],"limit":10}' --compact
 
-The Home Improvement database provides phone numbers as the primary contact method. The Other database provides both phone numbers and email addresses, making it ideal for cold email and multi-channel outreach campaigns.
+# 4a. Search: returns up to 25 leads, never spends more than 25 credits
+python3 smb_api.py GET /leads --params '{"positiveKeywords":["*dental*","*dentist*","*orthodont*"],"stateInclude":["TX"],"limit":25,"maxCredits":25}' --compact --out tx-dentists
 
-Some filter parameters only work with one database type. The user's account has a default database setting. Always check which database the user wants to query.
+# 4b. Export: a CSV file of up to 500 leads, never more than 500 credits
+python3 smb_api.py POST /leads/export --body '{"filters":{"positiveKeywords":["*dental*","*dentist*","*orthodont*"],"stateInclude":["TX"]},"maxResults":500,"maxCredits":500}'
+```
 
----
+`--compact` prints only the key fields of each lead; `--out NAME` also saves the full response as `NAME.json` in the output folder. Use both for larger searches so the full records do not flood the conversation.
 
-## Core Endpoints
+## Search parameters
 
-### 1. Search Leads — `GET /leads`
+`GET /leads` and `GET /leads/preview` take the same filters as query parameters. With the script, give lists as real JSON arrays; it encodes each parameter in the format the API expects. The most useful ones:
 
-The primary endpoint. Translates natural language queries into filtered lead searches. **Each new lead returned costs 1 credit** (previously-exported leads are free to re-query). Supports `maxCredits` and `maxResults` parameters for credit-optimized ordering.
+| Parameter | What it does |
+|---|---|
+| `positiveKeywords` | Keywords to include (OR). Matched as case-insensitive substrings against Registered URL, Crawled URL, Company Name and AI Categories. `*` is a wildcard: `*auto*repair*` matches "auto body repair" and "automotive repair". In URL columns, spaces also act as wildcards. |
+| `negativeKeywords` | Keywords to exclude: a lead is dropped if any of them matches any of those columns. |
+| `orColumns` | Columns the keywords search. Default `["wOgrequestedUrl","wSimpleCrawledUrl","wCompanyName","aiCategoryEstimation"]`. Adding `"wProfileDescriptionShort"` also searches the short description, but it moves keyword searches onto the slow path (up to about 110 seconds); keyword searches stay fast only while every `orColumns` entry is one of the four defaults. To search AI categories only, use `["aiCategoryEstimation"]`. |
+| `nameIncludeTerms` / `nameExcludeTerms` | Company-name terms. While `wCompanyName` is in `orColumns` (the default), include terms are OR'ed with `positiveKeywords`, so adding them to a keyword search widens it instead of narrowing it; each include term becomes required only when `wCompanyName` is left out of `orColumns`. Exclude terms always remove matching leads. |
+| `urlIncludeTerms` / `urlExcludeTerms`, `crawledUrlIncludeTerms` / `crawledUrlExcludeTerms` | Website URL terms. Same rule as company-name terms, with `wOgrequestedUrl` (Registered URL) and `wSimpleCrawledUrl` (Crawled URL) in `orColumns`. |
+| `descriptionIncludeTerms` / `descriptionExcludeTerms` | Short-description terms. Each include term is required (AND) unless `wProfileDescriptionShort` is in `orColumns`. |
+| `stateInclude` / `stateExclude` | Two-letter uppercase state codes, exact match: `["TX","OK"]`. |
+| `cityInclude` / `cityExclude` | City names, substring match: `["Austin"]`. |
+| `zipInclude` / `zipExclude` | ZIP codes, exact match. |
+| `lastBuyingSignalFrom` / `lastBuyingSignalTo` | Last Buying Signal date range, inclusive: ISO 8601 (`2026-09-01`, `2026-09-30T23:59:59Z`) or relative (`rel:7d`; units `h`, `d`, `w`, `m` = months, `y`). A date-only `To` means the start of that day, so to include all of September 30 send `2026-09-30T23:59:59Z`. An invalid date fails with `500`, so check the format. |
+| `buyingSignalTypeFilter` | Only leads whose latest buying signal is one of these types (exact, case-sensitive): `Newly Added`, `Phone Primary`, `Total Phones`, `Email Primary`, `Tier 1 Emails`, `Tier 2 Emails`, `Address Full`, `Instagram`, `LinkedIn`, `Facebook`, `YouTube`, `TikTok`, `X (Twitter)`, `Google Maps`, `Yelp`, `Pinterest`, `Other Social`. |
+| `phonePrimaryEmptyFilter`, `emailPrimaryEmptyFilter` | `exclude_empty` keeps only leads that have that contact detail (a lead without contacts still costs a credit), `only_empty` the opposite. |
+| `minRatingValue` / `maxRatingValue`, `minReviewCount` / `maxReviewCount`, `minNumLocations` / `maxNumLocations` | Numeric ranges. |
+| `registrationDateFrom` / `registrationDateTo` | Domain registration date as a plain `YYYY-MM-DD`, for newly launched businesses (it is compared as text, so a `rel:` value in `registrationDateFrom` leaves out the boundary day; see `REFERENCE.md`). |
+| `websiteSchemaFilter` | Website schema types, for example `["LocalBusiness","Dentist"]`. `GET /leads/other/schema-types` lists the values (the first call can be slow). |
+| `redirectFilter` | `yes` or `no`: whether the registered domain redirects elsewhere. |
+| `search` | Plain substring search over company name, both URLs, short description, city and primary phone (not a wildcard search). |
+| `sortBy` / `sortOrder` | Default `lastBuyingSignal` / `desc` (newest buying signals first). |
+| `page` / `limit` | Default 1 / 100; `limit` is at most 1000. |
+| `maxCredits` / `maxResults` | `GET /leads` (and the `POST /leads/export` body); preview ignores both. On `GET /leads` they cap the credits spent and the leads returned by that one call, and each page is a separate call. `maxCredits: 0` returns only leads you already have, free. |
+| `excludePurchased` | `GET /leads/preview` (and the `POST /leads/export` body); `GET /leads` ignores it. `true` hides leads flagged `contactExported`. On preview it is applied after paging, so a page can hold fewer than `limit` leads and `pagination.total` still counts the hidden ones. |
 
-**Key Parameters:**
+**At least one positive filter is required:** `positiveKeywords`, `nameIncludeTerms`, `urlIncludeTerms`, `crawledUrlIncludeTerms` or `descriptionIncludeTerms`. Without one, `GET /leads` and preview return no leads, charge nothing and set `requiresKeywords: true`, and `POST /leads/export` returns `400 bad_request`. Location, date, signal and other filters only narrow a search; they cannot start one. Never send an empty keyword (`[""]`): it matches everything.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | integer | Page number (default: 1) |
-| `limit` | integer | Results per page (max 1000, default 100) |
-| `database` | string | `home_improvement` or `other` |
-| `positiveKeywords` | JSON array string | Keywords to include (OR logic). Supports `*` wildcard for pattern matching (e.g., `["*dental*", "*ortho*"]`). Without wildcards, performs substring matching by default. |
-| `negativeKeywords` | JSON array string | Keywords to exclude (AND logic). Also supports `*` wildcard (e.g., `["*franchise*"]`). |
-| `orColumns` | JSON array string | Column names to search keywords against |
-| `search` | string | Full-text search across all fields |
-| `stateInclude` | string | Comma-separated state codes: `CA,NY,TX` |
-| `stateExclude` | string | Comma-separated state codes to exclude |
-| `cityInclude` | JSON array string | Cities to include |
-| `cityExclude` | JSON array string | Cities to exclude |
-| `zipInclude` | JSON array string | ZIP codes to include |
-| `zipExclude` | JSON array string | ZIP codes to exclude |
-| `nameIncludeTerms` | JSON array string | Business name include terms |
-| `nameExcludeTerms` | JSON array string | Business name exclude terms |
-| `lastUpdatedFrom` | date string | Filter by Last Updated date (after this date). Supports ISO 8601 or relative format (e.g., `rel:7d`, `rel:6m`). |
-| `lastUpdatedTo` | date string | Filter by Last Updated date (before this date) |
-| `updateReasonFilter` | string | Comma-separated update reasons to filter by (e.g., "Newly Added", "Phone Primary") |
+There are many more filters (Tier 1-6 emails, Total Phones, founders, software and ad-pixel columns, email provider and security, employee counts, NAICS, open positions and more). See `REFERENCE.md` for the complete list and formats. Unknown or misspelled parameters are ignored silently, which makes a search broader, so double-check names.
 
-**Understanding "Last Updated" — this is critical for finding the freshest leads:**
-- **Home Improvement leads:** Last Updated means a new phone number was detected
-- **Other leads:** Last Updated means any of the 5 contact/address fields changed: primary phone, secondary phone, primary email, secondary email, or full address
-- Both databases also include newly added records in this date
-- Many businesses launch a website before adding contact info, so the Last Updated date captures when that information first becomes available — making it the primary way to identify the most actionable leads
+**Speed:** keyword, company-name, URL, state and city filters with the default sort answer in about a second. Other filters can take up to about 110 seconds (the script prints a note when a query took the slow path). Previewing first warms a 20-second cache, so an identical `GET /leads` right after it is fast.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `countryInclude` | JSON array string | Countries to include |
-| `countryExclude` | JSON array string | Countries to exclude |
-| `sortBy` | string | Field to sort by |
-| `sortOrder` | string | `asc` or `desc` (default: `desc`) |
+### Results
 
-**Wildcard Keyword Tips:**
-- Use `*` to match any characters: `"*dental*"` matches "dental clinic", "pediatric dentistry", etc.
-- Combine wildcards for compound terms: `"*auto*repair*"` matches "auto body repair", "automotive repair shop", etc.
-- Use multiple keyword variations for broader coverage: `["*dental*", "*dentist*", "*orthodont*"]`
-- Keywords without wildcards still perform substring matching by default
-- **URL Space-to-Wildcard:** For URL columns (registered URL, crawled URL, profile URL), spaces in search terms are automatically replaced with `%` wildcards. For example, "dental clinic" becomes `%dental%clinic%` to match URLs like `example.com/dental-clinic`
-
-**Home Improvement Only:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `minStars` / `maxStars` | number | Star rating range |
-| `minReviewCount` / `maxReviewCount` | integer | Review count range |
-| `categoriesIncludeTerms` / `categoriesExcludeTerms` | JSON array string | Category filters |
-| `reviewSnippetIncludeTerms` / `reviewSnippetExcludeTerms` | JSON array string | Review text filters |
-| `profileUrlIncludeTerms` / `profileUrlExcludeTerms` | JSON array string | Profile URL filters |
-
-**Other Database Only:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `urlIncludeTerms` / `urlExcludeTerms` | JSON array string | Registered URL filters |
-| `crawledUrlIncludeTerms` / `crawledUrlExcludeTerms` | JSON array string | Crawled URL filters |
-| `descriptionIncludeTerms` / `descriptionExcludeTerms` | JSON array string | Short description filters |
-| `descriptionLongIncludeTerms` / `descriptionLongExcludeTerms` | JSON array string | Long description filters |
-| `emailPrimaryInclude` / `emailPrimaryExclude` | JSON array string | Primary email filters |
-| `emailSecondaryInclude` / `emailSecondaryExclude` | JSON array string | Secondary email filters |
-| `phonePrimaryInclude` / `phonePrimaryExclude` | JSON array string | Primary phone filters |
-| `phoneSecondaryInclude` / `phoneSecondaryExclude` | JSON array string | Secondary phone filters |
-| `redirectFilter` | string | `yes` or `no` — filter by redirect status |
-| `registrationDateFrom` / `registrationDateTo` | date string | Filter by domain registration date (ISO 8601 or relative format e.g., `rel:6m`) |
-| `timeScrapedFrom` / `timeScrapedTo` | date string | Filter by when leads were scraped (ISO 8601 or relative format e.g., `rel:30d`) |
-| `websiteSchemaFilter` | string | Comma-separated website schema types (e.g., `LocalBusiness,Organization`). Use `GET /leads/other/schema-types` for available values. |
-
-**Credit Control Parameters (also available on export):**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `maxResults` | integer | Cap total leads returned (new + previously-exported). New leads prioritized first, then previously-exported fill remaining slots. |
-| `maxCredits` | integer | Cap credits spent on this query. Set to `0` to only receive previously-exported leads at no cost. |
-
-When `maxCredits` or `maxResults` is specified, credit-optimized ordering is applied: new (credit-consuming) leads sorted first, then previously-exported leads, each group sorted by lastUpdated descending (or your custom sort).
-
-**Important:** At least one positive filter is required (positiveKeywords or any column-specific include terms).
-
-**Response includes:** `leads` array, `totalCount`, `page`, `limit`, `databaseType`, `creditsUsed`, `creditsRemaining` (credit-plan users only), `maxResults`, `maxCredits` (echoed when specified)
-
-**Error 402 Payment Required:** Returned when credit-plan users have insufficient credits. Use `maxCredits` or `maxResults` to limit credit usage, or purchase more credits.
-
-**Lead fields use display-name keys (with spaces).** The two databases return different schemas:
-
-- **HomeImprovementLead:** `id`, `Company Name`, `Phone`, `Stars`, `Review Count`, `Categories`, `Profile URL`, `Review Snippet`, `Address Full`, `Street`, `Address City`, `Address State`, `Address Zip`, `Address Country`, `Last Updated`, `Time Scraped`
-- **OtherLead:** `id`, `Company Name`, `Phone Primary`, `Phone Secondary`, `Email Primary`, `Email Secondary`, `Registered URL`, `Registration Date`, `Redirect`, `Crawled URL`, `AI Categories`, `Website Schema`, `Description Short`, `Description Long`, `Address Full`, `Street`, `City`, `State`, `Zip`, `Country`, `Last Updated`, `Time Scraped`
-
-Contact fields (phone/email) are masked for free users. The `Last Updated` field indicates when contact information was last detected or updated — the best indicator of lead freshness and actionability.
-
-**AI Categories (Other Database):** Leads in the Other database may include an `AI Categories` field containing an array of 1-3 AI-estimated category names, or null if not yet classified. This progressive enrichment classifies businesses into 957+ categories.
-
-### 2. Preview Leads — `GET /leads/preview`
-
-Preview leads matching your filters with **masked contact information** — does **NOT** consume any credits. Use this to test filters and evaluate result quality before committing credits on the full `GET /leads` endpoint.
-
-**How it differs from `GET /leads`:**
-- Contact fields are returned in masked format (e.g., `(5**) ***-**89`, `j***@***.com`)
-- No credits are consumed regardless of plan
-- No `maxCredits` or `maxResults` parameters (not needed since preview is free)
-- Contact-field filters are not available: `emailPrimaryInclude`, `emailPrimaryExclude`, `emailSecondaryInclude`, `emailSecondaryExclude`, `phonePrimaryInclude`, `phonePrimaryExclude`, `phoneSecondaryInclude`, `phoneSecondaryExclude`
-- All other filters are identical to `GET /leads` (keywords, location, company name, URLs, descriptions, ratings, dates, etc.)
-
-**Response includes:** `leads` array (with masked contacts), `pagination` (page, limit, total, pages), `databaseType`, `preview: true` flag
-
-**When to use preview:**
-- User wants to check how many results match before spending credits
-- User wants to evaluate filter quality
-- User says "preview", "test my filters", "how many leads match", or similar
-
-### 3. Website Schema Types — `GET /leads/other/schema-types`
-
-Returns a sorted list of all distinct website schema types found in the Other leads database. Use these values with the `websiteSchemaFilter` parameter on `GET /leads`.
-
-### 4. Export Leads — `POST /leads/export`
-
-Export filtered leads as CSV, JSON, or XLSX files.
-
-**Request body:**
 ```json
-{
-  "database": "home_improvement" | "other",
-  "filters": { /* same filter params as GET /leads */ },
-  "selectedIds": [1, 2, 3],  // alternative to filters
-  "formatId": 123,  // optional export format template ID
-  "maxLeads": 500,  // optional: cap leads per export, overflow stored in reservoir
-  "maxResults": 1000,  // optional: total leads (new + previously-exported)
-  "maxCredits": 100  // optional: credit spending cap (0 = only previously-exported leads)
-}
+{"data": {
+  "leads": [ { "id": 2841123, "Company Name": "Bright Smile Dental", "City": "Austin", "State": "TX",
+               "Phone Primary": "(512) 555-0142", "Email Primary": "hello@brightsmiledentaltx.com",
+               "Last Buying Signal": "2026-10-03T09:14:52.118Z", "Buying Signal Type": ["Phone Primary"], "...": "..." } ],
+  "pagination": { "page": 1, "limit": 25, "total": 1834, "pages": 74 },
+  "databaseType": "other", "creditsUsed": 18, "creditsRemaining": 4982, "maxCredits": 25 }}
 ```
 
-**Credit system (Starter/Growth/Scale plans):**
-- Each net-new lead exported deducts 1 credit
-- Previously-exported leads are included for free
-- Use `maxCredits` to control spending, `maxLeads` to limit volume
-- Set `maxCredits: 0` to only receive previously-exported leads at no cost
+- Each lead has 61 fields with display names (`Company Name`, `Phone Primary`, `Total Phones`, `Email Primary`, `Tier 1 Emails`, `AI Categories`, `Registered URL`, `Description Short`, `Founder Name(s)` and more; full list in `REFERENCE.md`). `Last Updated` is a deprecated duplicate of `Last Buying Signal`.
+- `pagination.total` is the full match count before credit caps.
+- `creditsRemaining` does not include overage headroom and shows `0` when a page is empty; check `GET /me` for the real balance.
+- **Preview** masks contacts (`(512) ***-**42`, `hel*@brightsmiledentaltx.com`) except on leads you already have, which come back unmasked with `"contactExported": true`. Preview also flags a lead this way when one of its Total Phones or Tier 1-6 emails matches the primary phone or primary email of a lead you received before; `GET /leads` and exports still charge 1 credit for such a lead, so `contactExported: true` does not guarantee the lead is free. Preview never charges.
 
-**Response:** `files` array (with base64-encoded data), `leadCount`, `exportId`, `databaseType`, `creditsUsed`, `creditsRemaining`, `overflowCount`
+## Exporting files
 
-**Error 402 Payment Required:** Returned when credit-plan users have insufficient credits.
-
-Rate limited: 1 export per 5 minutes, max 10,000 leads per export.
-
-### 5. Filter Presets — `/filter-presets`
-
-- `GET /filter-presets` — List all saved presets
-- `POST /filter-presets` — Create a preset (requires `name` and `filters` object)
-- `DELETE /filter-presets/{id}` — Delete a preset
-
-### 6. Keyword Lists — `/keyword-lists`
-
-Keyword lists now support typed lists (positive or negative) with paired list management and source categories.
-
-- `GET /keyword-lists` — List all keyword lists
-- `POST /keyword-lists` — Create (requires `name`, optional `keywords` array, `sourceCategories` array max 3)
-- `PUT /keyword-lists/{id}` — Update
-- `DELETE /keyword-lists/{id}` — Delete
-
-**Keyword list properties:** `name`, `keywords` (wildcard patterns e.g., `*dentist*`), `type` (positive/negative), `pairedListId` (linked positive/negative pair), `sourceCategories` (max 3), `autoRefineEnabled`, `refinementStatus` (running/completed/paused)
-
-### 7. Email Schedules — `/email-schedules`
-
-Email schedules now support distribution modes and lead reservoirs.
-
-- `GET /email-schedules` — List schedules
-- `POST /email-schedules` — Create (requires `name`, `filterPresetId`, `intervalValue`, `intervalUnit`, `recipients` min 1)
-- `PATCH /email-schedules/{id}` — Update (supports `isActive` toggle)
-- `DELETE /email-schedules/{id}` — Delete
-- `POST /email-schedules/{id}/trigger` — Manually trigger an active schedule to send immediately (rate limited: 1 per 5 minutes)
-
-**Distribution modes:**
-- `full_copy` (default): All leads sent to every recipient
-- `split_evenly`: Leads divided evenly among recipients. Optional `fullCopyRecipients` array for people who should receive the full list (e.g., managers)
-
-**Lead reservoir:** Set `maxLeadsPerEmail` to cap leads per delivery. Overflow is stored and included in the next scheduled email.
-
-**Schedule pause reasons:** The `pauseReason` field indicates why a schedule is paused: `null` (not paused), `"user"` (manually paused), or `"insufficient_credits"` (auto-paused due to low credits).
-
-**Combined File Feature:** When file splitting is enabled, you can configure a combined file that includes an assignee column and file name column, sent to dedicated combined recipients. Use `combinedAssigneeColumnName` and `combinedFileNameColumnName` on export formats.
-
-### 8. Export Formats — `/export-formats`
-
-- `GET /export-formats` — List custom export formats
-- `POST /export-formats` — Create (requires `name`, supports `fileType`, `fieldMappings`, split settings, `databaseType`, `combinedAssigneeColumnName`, `combinedFileNameColumnName`)
-- `GET /export-formats/{id}` — Get specific format
-- `PATCH /export-formats/{id}` — Update
-- `DELETE /export-formats/{id}` — Delete
-- `POST /export-formats/{id}/set-default` — Set as default
-
-### 9. Export History — `/export-history`
-
-- `GET /export-history` — List past exports (optional `limit` param, default 50)
-- `GET /export-history/{id}/download` — Re-download (expires after 7 days)
-
-### 10. AI Features
-
-**`POST /ai/suggest-categories`** — Get AI category suggestions based on company profile.
-
-Required: `companyName`, `companyDescription`, `productService`
-Optional: `companyWebsite`, `smbType`, `excludeCategories`
-
-**`POST /ai/generate-keywords`** — Trigger async keyword generation based on your company profile and target categories (up to 3 per list). Keywords are generated as wildcard patterns and saved to keyword lists with auto-refine enabled by default. Use `/ai/keyword-status` to check progress.
-
-**`GET /ai/keyword-status`** — Check the status of keyword generation jobs. Use this to poll for completion after triggering keyword generation.
-
-**AI Auto-Refine** — Single-pass 4-phase optimization that automatically refines keyword lists using AI:
-
-- Phase 1: Validates positive keywords (50% threshold, up to 2 variation attempts)
-- Phase 1B: Discovers up to 15 new positive keywords in a single AI call
-- Phase 2: Validates negative keywords (40% threshold)
-- Phase 2B: Discovers up to 5 new negative keywords from ~80 sample leads
-- Final quality score (1-10, median of 3) determines if a retry pass is needed
-- Auto-refine turns off when complete
-- Uses `sourceCategories` (max 3 per list) for accurate AI scoring
-
-Endpoints:
-
-- `POST /ai/auto-refine/enable` — Enable auto-refine for a keyword list (requires `listId`)
-- `POST /ai/auto-refine/disable` — Disable auto-refine for a keyword list (requires `listId`)
-- `GET /ai/auto-refine/status` — Check auto-refine status (optional `listId` query param to filter by specific list)
-
-### 11. Export Blacklist — `/export-blacklist`
-
-- `GET /export-blacklist` — List blacklisted entries
-- `POST /export-blacklist` — Add entry (single or batch via `entries` array)
-- `DELETE /export-blacklist/{id}` — Remove entry
-
-### 12. Account
-
-- `GET /me` — Get user profile (subscription plan, settings, onboarding status, credit balance)
-- `PATCH /me` — Update profile (firstName, lastName, companyName, companyWebsite)
-- `GET /settings/database` — Check current database type and switch availability. Returns: `currentDatabase`, `canSwitch` (boolean), `daysRemaining` (days until switch allowed), `lastSwitchedAt` (ISO timestamp or null)
-- `POST /settings/switch-database` — Switch between databases (has cooldown). Requires `smbType` field with value `home_improvement` or `other`. Incompatible email schedules are auto-paused; the response includes a `pausedSchedules` count.
-
-### 13. Programmatic Purchase — Buy a subscription via API
-
-**⚠ Purchase Confirmation Required:** Always confirm with the user before calling `POST /purchase`, `POST /purchase-credits`, or `POST /subscription/change-plan`. These endpoints create real Stripe charges. Never execute a purchase action without explicit user confirmation.
-
-**⚠ Unauthenticated Endpoints:** `POST /purchase` and `POST /claim-key` do **not** require an API key. This means they can be called without any credentials. Because they initiate real Stripe checkout sessions and retrieve API keys, **never call these endpoints autonomously** — always present the action to the user and wait for explicit approval before executing.
-
-No web signup required. New users can purchase and get an API key entirely via API:
-
-1. `POST /purchase` **(unauthenticated)** — Create a Stripe Checkout session. Provide `email` and `plan` (starter, growth, scale, platinum, or enterprise). Returns a `checkoutUrl` and `claimToken`.
-2. Direct the user to complete payment at the checkout URL.
-3. `POST /claim-key` **(unauthenticated)** — After payment, provide `email` and `claimToken` to retrieve the API key. If payment is still pending, returns status `pending` — poll every 5-10 seconds.
-
-### 14. Credits & Subscription Management
-
-**⚠ All purchase/plan-change endpoints create real charges — always confirm with the user first.**
-
-- `POST /purchase-credits` — Purchase additional permanent credits. Provide either `creditCount` (min 100, max 5x your plan's monthly credits) or `dollarAmount` (min $1). Max per purchase: Starter 2,500, Growth 10,000, Scale 50,000, Platinum 500,000, Enterprise 1,250,000. Uses saved payment method (Stripe off-session charge). Pricing: Starter 10¢, Growth 7.5¢, Scale 5¢, Platinum 3¢, Enterprise 2¢ per credit.
-- `GET /auto-top-up` — Get auto top-up configuration (trigger threshold, purchase amount, monthly cap, current usage).
-- `PATCH /auto-top-up` — Configure automatic credit purchases. When enabled, credits are purchased automatically when permanent credit balance falls below the trigger threshold. Parameters: `enabled` (required, boolean), `triggerType` ("credits" or "dollars"), `triggerAmount`, `purchaseType` ("credits" or "dollars"), `purchaseAmount`, `capType` ("credits", "dollars", or null), `capAmount` (nullable).
-- `POST /subscription/change-plan` — Upgrade or downgrade between starter, growth, and scale. On upgrade, unused monthly credits convert to permanent credits (capped at current plan's standard allocation). Downgrades take effect at renewal.
-- `POST /subscription/cancel` — Cancel subscription at end of current billing period. Access continues until period ends.
-
----
-
-## Natural Language Translation Guide
-
-When users make natural language requests, translate them into API calls. Use multiple wildcard keyword variations to cast a wider net — keywords are matched via OR logic so more variations means better coverage:
-
-| User Says | API Call |
-|-----------|---------|
-| "Find new dental practices in Texas" | `GET /leads?positiveKeywords=["*dental*","*dentist*","*orthodont*"]&stateInclude=TX` |
-| "Search for med spas and aesthetics businesses in Florida" | `GET /leads?positiveKeywords=["*med*spa*","*medical*spa*","*aesthet*","*botox*","*medspa*"]&stateInclude=FL` |
-| "Show me auto repair shops in Chicago updated this week" | `GET /leads?positiveKeywords=["*auto*repair*","*body*shop*","*mechanic*","*oil*change*","*brake*"]&cityInclude=["Chicago"]&lastUpdatedFrom=rel:7d` |
-| "Find pet grooming businesses in California, exclude boarding" | `GET /leads?positiveKeywords=["*pet*groom*","*dog*groom*","*pet*salon*"]&negativeKeywords=["*boarding*","*kennel*"]&stateInclude=CA` |
-| "Get bakeries and catering companies in New York" | `GET /leads?positiveKeywords=["*bakery*","*bake*shop*","*cater*","*pastry*","*cake*"]&stateInclude=NY` |
-| "Find fitness studios in Georgia and North Carolina" | `GET /leads?positiveKeywords=["*fitness*","*gym*","*yoga*","*pilates*","*crossfit*"]&stateInclude=GA,NC` |
-| "Get 50 leads with high ratings" | `GET /leads?limit=50&minStars=4` (home_improvement only) |
-| "Find businesses with LocalBusiness schema type" | `GET /leads?websiteSchemaFilter=LocalBusiness` (other only) |
-| "Show leads registered in the last 6 months" | `GET /leads?registrationDateFrom=rel:6m` (other only) |
-| "Preview leads before spending credits" | `GET /leads/preview` with same filters |
-| "How many dental leads are in Texas?" | `GET /leads/preview` with dental keywords + stateInclude=TX (check totalCount) |
-| "Test my filters without using credits" | `GET /leads/preview` with current filters |
-| "Export all my filtered results" | `POST /leads/export` with current filters |
-| "Export but only spend 50 credits max" | `POST /leads/export` with `maxCredits: 50` |
-| "Export only previously-exported leads (free)" | `POST /leads/export` with `maxCredits: 0` |
-| "What categories should I target?" | `POST /ai/suggest-categories` |
-| "Save this search as 'FL Med Spas'" | `POST /filter-presets` |
-| "Show my recent exports" | `GET /export-history` |
-| "What plan am I on?" | `GET /me` |
-| "How many credits do I have left?" | `GET /me` |
-| "Buy 500 more credits" | `POST /purchase-credits` with `creditCount: 500` |
-| "Upgrade to the Growth plan" | `POST /subscription/change-plan` with `targetPlan: "growth"` |
-| "Cancel my subscription" | `POST /subscription/cancel` |
-| "Exclude these domains from exports" | `POST /export-blacklist` |
-| "Enable auto-refine on my keyword list" | `POST /ai/auto-refine/enable` with `listId` |
-| "Check on my keyword generation" | `GET /ai/keyword-status` |
-| "Send my scheduled email now" | `POST /email-schedules/{id}/trigger` |
-| "Split leads evenly among my sales team" | `POST /email-schedules` with `distributionMode: "split_evenly"` |
-| "Search but only spend 10 credits" | `GET /leads` with `maxCredits=10` |
-| "Show me only leads I've already exported" | `GET /leads` with `maxCredits=0` |
-| "Set up auto top-up for credits" | `PATCH /auto-top-up` with `enabled: true` and thresholds |
-| "Check my auto top-up settings" | `GET /auto-top-up` |
-| "I want to sign up for a Starter plan" | `POST /purchase` with `plan: "starter"` |
-
-## Building API Requests
-
-Use the included `smb_api.py` script for all API calls. It handles authentication, URL encoding, response parsing, and safe file export in a single reusable file. **Do not use shell commands like `curl`** — constructing shell commands from user-provided input risks shell injection vulnerabilities.
-
-### Usage
+`POST /leads/export` creates a file from a search and saves it to the output folder automatically.
 
 ```bash
-python smb_api.py <API_KEY> <METHOD> <ENDPOINT> [--params '{"key":"value"}'] [--body '{"key":"value"}'] [--output-dir /path/to/dir]
+python3 smb_api.py POST /leads/export --body '{"filters":{"positiveKeywords":["*med*spa*","*aesthet*","*botox*"],"stateInclude":["FL"],"lastBuyingSignalFrom":"rel:30d"},"maxResults":1000,"maxCredits":300}'
 ```
 
-### Examples
+- **Body:** `filters` (the same filters as search, as real JSON arrays, except `search`, `page` and `limit`: the export ignores those three without an error, so a `search` term that narrowed your preview does not narrow the export, and the export can then match and charge for more leads; and never put `maxCredits`, `maxResults` or `excludePurchased` inside `filters`, where they are ignored), plus optional top-level `maxCredits`, `maxResults`, `maxLeads`, `excludePurchased`, `formatId` and `inline`. Use `selectedIds` (lead ids) instead of `filters` to export specific leads. The script converts list filters given as strings or numbers into real arrays (the export ignores other forms of most list filters), moves a misplaced `maxCredits`, `maxResults`, `maxLeads`, `excludePurchased`, `formatId` or `inline` out of `filters`, and refuses `filters.search`, `filters.page` and `filters.limit`.
+- **Without `maxCredits` an export can spend your entire balance** (plus any overage budget). Always set it.
+- `maxResults` caps the total leads in the file. `maxLeads` also caps it, but keeps the leads that did not fit (including those cut by `maxCredits`) in a "reservoir" that is merged into your next `maxLeads` export whatever its filters are, and new leads among them cost 1 credit each. The reservoir is one pool per account, shared with email schedules and capped at the plan's monthly credit allowance; leads that do not fit are not kept. Prefer `maxResults` unless the user wants that carry-over.
+- `excludePurchased: true` exports only leads you do not have yet.
+- **Formats:** without `formatId` the export uses your default export format (the one with `isDefault: true` in `GET /export-formats`, which can be XLSX), or the built-in CSV when you have none; a wrong `formatId` also falls back to it. JSON and XLSX come from a saved export format. There is no file-type option in the request, so to be sure of CSV, pass the id of a CSV format.
+- **XLSX limit:** at most 20,000 rows in any one file (a single file, a split part, or the `includeTotal` file), and the `400 export_too_large` error arrives after the credits were charged. For bigger exports use a CSV format, or an XLSX format with `splitFiles: true`, `splitMode: "max_rows"`, `maxRowsPerFile` of 20,000 or less and `includeTotal: false`. If it happens, do not simply repeat the request (an export always picks new leads first, so a repeat can charge for different leads): re-run it with a CSV format, `maxCredits: 0` and no `excludePurchased`, which returns only leads you already have at no cost, or re-export the charged leads from the lead export history (below).
+- **Size:** up to 100,000 leads per export. 5 export requests per minute.
+- **Response:** the script saves each file and prints `leadCount`, `creditsUsed`, `creditsRemaining`, `exportId` and the saved paths. The default file contains 59 columns, including `Last Buying Signal` and `Buying Signal Type`.
+- `inline: false` (or `--params '{"inline":false}'`) returns download links instead of file contents; the script then downloads the files itself. Use it for very large exports.
+
+**Re-downloading:** every export file is kept for 90 days.
 
 ```bash
-# Search for med spas in Florida using wildcard keywords (OR logic)
-python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*med*spa*\",\"*medical*spa*\",\"*aesthet*\",\"*botox*\",\"*medspa*\"]","stateInclude":"FL","limit":"25"}'
-
-# Find auto shops in multiple states, exclude franchises
-python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*auto*repair*\",\"*body*shop*\",\"*mechanic*\",\"*tire*\",\"*oil*change*\"]","negativeKeywords":"[\"*franchise*\",\"*jiffy*\"]","stateInclude":"GA,FL,NC,SC,TN","limit":"50"}'
-
-# Search for recently updated dental leads in Texas
-python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\",\"*dentist*\",\"*orthodont*\",\"*oral*surg*\"]","stateInclude":"TX","lastUpdatedFrom":"rel:7d"}'
-
-# Full-text search across all fields
-python smb_api.py smbk_xxx GET /leads --params '{"search":"organic coffee","limit":"25"}'
-
-# Filter by website schema type (other database only)
-python smb_api.py smbk_xxx GET /leads --params '{"websiteSchemaFilter":"LocalBusiness","stateInclude":"CA","limit":"25"}'
-
-# Preview leads with masked contacts (no credits consumed)
-python smb_api.py smbk_xxx GET /leads/preview --params '{"positiveKeywords":"[\"*dental*\",\"*dentist*\"]","stateInclude":"TX","limit":"25"}'
-
-# Preview to check result count before committing credits
-python smb_api.py smbk_xxx GET /leads/preview --params '{"positiveKeywords":"[\"*med*spa*\",\"*aesthet*\"]","stateInclude":"FL"}'
-
-# Get available website schema types
-python smb_api.py smbk_xxx GET /leads/other/schema-types
-
-# Get account info (includes credit balance)
-python smb_api.py smbk_xxx GET /me
-
-# Export with credit controls
-python smb_api.py smbk_xxx POST /leads/export --body '{"database":"other","filters":{"positiveKeywords":["*pet*groom*","*veterinar*","*dog*train*"],"stateInclude":"CA,OR,WA"},"maxCredits":100}'
-
-# Export only previously-exported leads (free, no credits used)
-python smb_api.py smbk_xxx POST /leads/export --body '{"database":"other","filters":{"positiveKeywords":["*dental*"],"stateInclude":"TX"},"maxCredits":0}'
-
-# Purchase additional credits
-python smb_api.py smbk_xxx POST /purchase-credits --body '{"creditCount":500}'
-
-# Purchase credits by dollar amount
-python smb_api.py smbk_xxx POST /purchase-credits --body '{"dollarAmount":50}'
-
-# Change subscription plan
-python smb_api.py smbk_xxx POST /subscription/change-plan --body '{"targetPlan":"growth"}'
-
-# Cancel subscription
-python smb_api.py smbk_xxx POST /subscription/cancel
-
-# Search leads with credit controls (cap at 10 credits)
-python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\"]","stateInclude":"TX","maxCredits":"10","maxResults":"50"}'
-
-# Search only previously-exported leads (free, no credits used)
-python smb_api.py smbk_xxx GET /leads --params '{"positiveKeywords":"[\"*dental*\"]","stateInclude":"TX","maxCredits":"0"}'
-
-# Get auto top-up configuration
-python smb_api.py smbk_xxx GET /auto-top-up
-
-# Configure auto top-up (buy 500 credits when balance drops below 100)
-python smb_api.py smbk_xxx PATCH /auto-top-up --body '{"enabled":true,"triggerType":"credits","triggerAmount":100,"purchaseType":"credits","purchaseAmount":500}'
-
-# Disable auto top-up
-python smb_api.py smbk_xxx PATCH /auto-top-up --body '{"enabled":false}'
-
-# Start a programmatic purchase (no auth needed, but script still requires a placeholder key)
-python smb_api.py none POST /purchase --body '{"email":"user@example.com","plan":"starter"}'
-
-# Claim API key after payment
-python smb_api.py none POST /claim-key --body '{"email":"user@example.com","claimToken":"tok_abc123"}'
-
-# AI category suggestions
-python smb_api.py smbk_xxx POST /ai/suggest-categories --body '{"companyName":"FitPro Supply","companyDescription":"Commercial fitness equipment distributor","productService":"Gym equipment, treadmills, weight systems"}'
-
-# Create a filter preset
-python smb_api.py smbk_xxx POST /filter-presets --body '{"name":"NY Bakeries","filters":{"positiveKeywords":["*bakery*","*bake*shop*","*cater*","*pastry*"],"stateInclude":"NY"}}'
-
-# Create email schedule with split distribution
-python smb_api.py smbk_xxx POST /email-schedules --body '{"name":"Daily TX Leads","filterPresetId":5,"intervalValue":1,"intervalUnit":"days","recipients":[{"email":"rep1@co.com"},{"email":"rep2@co.com"}],"distributionMode":"split_evenly","fullCopyRecipients":["manager@co.com"],"maxLeadsPerEmail":50}'
-
-# Enable AI auto-refine on a keyword list
-python smb_api.py smbk_xxx POST /ai/auto-refine/enable --body '{"listId":42}'
-
-# Check auto-refine status for a specific list
-python smb_api.py smbk_xxx GET /ai/auto-refine/status --params '{"listId":"42"}'
-
-# Check keyword generation job status
-python smb_api.py smbk_xxx GET /ai/keyword-status
-
-# Manually trigger an email schedule
-python smb_api.py smbk_xxx POST /email-schedules/15/trigger
-
-# Delete a filter preset
-python smb_api.py smbk_xxx DELETE /filter-presets/42
+python3 smb_api.py GET /export-history --params '{"limit":10}'     # newest first: id, fileName, leadCount, expiresAt, downloadAvailable
+python3 smb_api.py GET /export-history/412/download                 # saves the file
 ```
 
-The script outputs JSON to stdout and rate limit headers to stderr. For export requests, files are automatically saved with sanitized filenames.
+After 90 days (or for files exported before 26 September 2026, or whose upload failed) the download answers `410 gone`. The leads can still be re-exported **free** from the lead-level history:
 
-**Remember:**
-- Use multiple wildcard keyword variations to cast a wider net (e.g., `["*dental*", "*dentist*", "*orthodont*"]` not just `["dental"]`) — keywords are matched via OR logic
-- Use `*` for flexible pattern matching: `"*auto*repair*"` matches "auto body repair", "automotive repair shop", etc.
-- JSON array parameters should be serialized as strings inside the `--params` JSON
-- At least one positive filter is required for lead searches
-- Use `GET /leads/preview` when the user wants to test filters or check counts without spending credits — contacts are returned masked and no credits are consumed
-- Check which database the user needs before applying database-specific filters
-- Home Improvement database provides phone numbers; Other database provides phone numbers and email addresses
-- Lead field keys use display names with spaces (e.g., `Company Name`, `Phone Primary`, `AI Categories`)
-- Phone and email are masked for free-tier users and always masked in preview responses
-- Present results in a clean, readable table format
-- For credit-plan users, mention credits used/remaining after both queries and exports (both consume credits for new leads)
-- The `POST /purchase` and `POST /claim-key` endpoints do not require authentication (no API key needed)
+```bash
+python3 smb_api.py GET /lead-export-history --params '{"limit":50}'                    # every lead you received, with its tracking id
+python3 smb_api.py POST /lead-export-history/re-export --body '{"trackingIds":[55123,55124]}'
+```
+
+`re-export` rebuilds a file from the stored copies (up to 5,000 tracking ids, no credits). `POST /lead-export-history/refresh` and `/refresh-and-export` first replace the stored copies with the current data (free, but the original copies are overwritten). See `REFERENCE.md`.
+
+## Enriching a list of websites
+
+`POST /enrichments` looks up a list of website URLs. URLs already in the database return the full lead record; others are fetched live from the website.
+
+**Pricing:** 1 credit for a URL found in the database that you have not bought before; 0.1 credit for a URL fetched live; 0 for a URL you already have, one that returned no data, or one without the contact details you asked for. A URL found in the database is never fetched live. Submitted URLs and results are never added to the database. There is no pricing dialog through the API, so state these prices and agree on `maxCredits` with the user first (the script requires `--confirm`).
+
+```bash
+python3 smb_api.py POST /enrichments --body-file urls.json --confirm
+# urls.json: {"urls": ["https://brightsmiledentaltx.com/contact", "acme-plumbing.com"], "maxCredits": 50, "contactTypes": "either", "emailResults": false}
+
+python3 smb_api.py GET /enrichments/412             # poll: status queued, matching, scraping, merging, delivering, then completed / partial / failed
+python3 smb_api.py GET /enrichments/412/download    # once completed or partial: saves the CSV (one row per usable URL with a Status column; duplicates and unparseable URLs are only counted)
+```
+
+- Up to 100,000 URLs per run (after removing duplicates). Send full URLs; a deep link can carry better contact data. Put the most important URLs first, because a credit limit trims from the end of the list.
+- Options (exact names, top level of the body; a misspelled name is ignored and removes your limit): `maxCredits` (whole number of at least 1; when omitted the run can spend up to your current credit balance but never the overage budget, while a `maxCredits` above your balance lets it draw on the overage budget, which is billed to the card), `databaseMatchPercent` (0-100, default 100), `contactTypes` (`phone`, `email` or `either`, the default), `emailResults` (default: the account setting; set `false` to skip the notification email). Never send `null` for an option.
+- Runs are asynchronous. Poll `GET /enrichments/{id}` every 30-60 seconds at first, then every few minutes; large lists can take hours. `partial` means the file is ready but a credit limit stopped the run early. `failed` never produces a file.
+- Each `POST` creates a new run and there is no undo. If a submit fails or times out, check `GET /enrichments` before sending it again.
+
+## Saved searches, keyword lists and email schedules
+
+**Filter presets** exist to drive email schedules. `POST /filter-presets` takes `{"name": "...", "filters": {"hash": "..."}}`, where `hash` uses the dashboard's search format (`ni` company-name terms, `ui` URL terms, `si` states, `ci` cities and so on; see `REFERENCE.md`). A preset without a positive filter in that format (a company-name, URL or description term, or one of the user's own positive keyword lists) never sends anything. A hash has no key for `positiveKeywords`: `ni`, `ui`, `cli` and `di` each match only their own column and none of them searches AI Categories, while keywords from a positive keyword list in `nkl` are searched like `positiveKeywords` (Registered URL, Crawled URL, Company Name and AI Categories). To make a schedule send the same leads as a `positiveKeywords` search you previewed, first create a positive keyword list with those keywords (`POST /keyword-lists`), then put its id in `nkl` together with the location keys (for example `"#" + urllib.parse.urlencode({"nkl": "42", "si": "OH"})`); a negative list in `nkl` works like `negativeKeywords`. Presets cannot be edited, and deleting one also deletes its email schedules.
+
+**Keyword lists** (`/keyword-lists`) store keyword sets. Create with `{"name": "...", "type": "positive" or "negative", "keywords": ["*dental*"]}`. Lists are not applied to API searches automatically: read a list's `keywords` and pass them as `positiveKeywords` or `negativeKeywords`.
+
+**Email schedules** (`/email-schedules`) email new matching leads on an interval and spend credits for new leads. Required: `name`, `filterPresetId` (number), `intervalValue` (whole number 1-720), `intervalUnit` (`hours` or `days`) and `recipients` (`[{"email": "rep@company.com"}]`, up to 50). Always create with `"isActive": false`, review with the user, then activate with `PATCH /email-schedules/{id}` and `{"isActive": true}` (needs `--confirm`). An active schedule sends its first email within about 15 minutes, including every lead that currently matches (up to 10,000). Options include `maxLeadsPerEmail` (new leads over this cap, and new leads your credits could not cover, are kept in the account's shared lead reservoir while it has room and sent with a later email; on credit plans, already-received leads over the cap are not kept), `distributionMode` (`full_copy` or `split_evenly`; `fullCopyRecipients` only receive mail when at least 2 recipients are active) and combined-file settings (`REFERENCE.md`). There is no time-of-day setting: a daily schedule sends about 24 hours after the previous send, so the time drifts. `POST /email-schedules/{id}/trigger` sends right away. A `200` does not prove an email went out; compare `lastSent` and `totalSentCount` in `GET /email-schedules` before and after.
+
+## AI helpers
+
+- `POST /ai/suggest-categories` with `companyName`, `companyDescription` and `productService` (optional `companyWebsite`, `excludeCategories`) returns 4-12 suggested customer categories for the user's business. Nothing is saved. Turn the suggestions into keywords yourself (for example "Dentists" becomes `["*dental*","*dentist*"]`).
+- `POST /ai/generate-keywords` **deletes every existing keyword list** and regenerates lists from the account's target categories, which can only be set in the dashboard. If `GET /me` shows an empty `targetCategories`, it deletes the lists and generates nothing. Filter presets that point at keyword lists by id (`nkl`, `ukl`, `ckl` or `dkl` in the hash, which dashboard-saved presets also use) silently lose those keywords and exclusions when the lists are deleted, and the same applies to `DELETE /keyword-lists/{id}`: their email schedules can stop sending, or start emailing a broader set of leads and spending credits on them. Check `GET /filter-presets` first and pause any affected schedules. Only use it when the user explicitly wants all lists replaced (needs `--confirm`). Check progress with `GET /ai/keyword-status`.
+- `POST /ai/auto-refine/enable` / `disable` with `{"listId": 42}` turn on or off the AI refinement of a keyword list and its paired list; `GET /ai/auto-refine/status?listId=42` shows progress. Enabling resets the list's score history, and the refinement rewrites the list's keywords, which changes what any email schedule using the list sends (pause those schedules first if the user wants to review). A `200` does not guarantee the run started: if `autoRefineEnabled` is true but `refinementStatus` stays `null`, call enable again a few minutes later.
+
+## Account, credits and billing
+
+- `GET /me`: profile, plan, `subscriptionStatus`, the credit balance fields, the `trial` object, and the `autoTopUp` and `overageBudget` settings. `PATCH /me` updates `firstName`, `lastName`, `companyName` and `companyWebsite`.
+- `POST /purchase-credits` (needs `--confirm`): buy permanent credits with the card on file, charged immediately. Send `creditCount` (at least 100, at most 5x the plan's monthly credits) or `dollarAmount` (at least 1). Price per credit is the plan's rate in the table above. The script sends an idempotency key and prints it; if the call times out, re-run it within 24 hours with `--idempotency-key` set to that value, so it is not charged twice (after 24 hours, check `permanentCredits` in `GET /me` before buying again). Works during a trial, and is charged immediately. If the user moved to a lower plan in the current paid billing period (not a plan switch during a free trial), that downgrade is still pending and credits bought now expire at the next renewal together with the rest of the balance (auto top-up pauses for this reason, a manual purchase does not). `GET /me` does not show a pending downgrade, so ask the user before buying, and say so when you confirm the price.
+- `GET /auto-top-up`, `PATCH /auto-top-up`: automatic credit purchases when the permanent balance falls below a threshold. Enabling requires `triggerType`, `triggerAmount`, `purchaseType` and `purchaseAmount` (and optional `capType`, `capAmount`), replaces the whole configuration (send every field you want to keep) and needs `--confirm`. `{"enabled": false}` turns it off and always works. Not available during a trial.
+- `GET /overage-budget`, `PATCH /overage-budget`: lets usage continue after the balance reaches zero, billed to the card once a day at the plan's rate, up to a per-cycle budget (`{"enabled": true, "budgetType": "dollars", "budgetAmount": 50}`; `budgetType` defaults to dollars). Needs `--confirm` to enable. Not available during a trial.
+- `POST /subscription/change-plan` (needs `--confirm`) with `{"targetPlan": "starter" | "growth" | "scale"}`:
+  - **Upgrade:** charges the new plan's full price now, restarts the billing cycle, keeps every unused credit and grants the new allowance immediately.
+  - **Downgrade:** no charge now. At the next renewal the entire remaining balance (unused, rolled-over and purchased credits) expires before the lower allowance is granted. Warn the user. Moving back to the original plan (or higher) before renewal cancels the pending downgrade and keeps the credits, but it is billed like an upgrade: that plan's full price is charged now and the billing cycle restarts. Confirm the amount with the user first. While a downgrade is pending, a move to a plan between the current plan and the original one (for example Scale, then Starter, then Growth) is not an upgrade: nothing is charged and the whole balance still expires at renewal. `GET /me` does not show whether a downgrade is pending, so ask the user whether they moved to a lower plan in this billing period before you describe the cost.
+  - **During a free trial**, `mode` decides: `switch_trial` (the default) changes the trial plan with no charge and keeps the trial end date (credits already used stay used); `activate_now` ends the trial, charges the target plan's full price now and grants its full allowance. A declined card returns `402 payment_declined` with `trialStillActive: true`: nothing changed and the trial continues.
+  - Platinum and Enterprise changes go through support. A `409` means nothing changed; show its `message` (see `REFERENCE.md` for the codes).
+- `POST /subscription/cancel` (needs `--confirm`): cancels at the end of the current billing period, and access continues until then. During a trial the card is never charged, but the free trial is used up. It can only be undone in the dashboard before the period ends. Remaining credits are forfeited when the subscription ends. A confirmation email is sent.
+
+## Signing up through the API
+
+New customers can subscribe without the website:
+
+```bash
+python3 smb_api.py POST /purchase --body '{"email":"owner@company.com","plan":"growth"}' --confirm
+```
+
+- Plans: `starter`, `growth`, `scale` (14-day free trial by default), `platinum`, `enterprise` (no trial, charged at checkout). `"trial": false` skips the trial and charges at checkout.
+- The response has a Stripe `checkoutUrl` (valid 24 hours) and a `trial` block (`eligible`, `days`, `credits`, `endsAt`, `note`, and `reason` when not eligible). Before the user opens the link, tell them the plan price and exactly when it is charged: at checkout, or automatically when the trial ends.
+- After checkout **the API key is emailed** to that address. If the address already has an account, the purchase must first be confirmed from an email sent to it, and the key follows. Do not use `POST /claim-key`; it belongs to an older flow and cannot succeed.
+- An address with an active or trialing subscription gets `409 already_subscribed` (a trialing account should use `change-plan` instead). Each call creates a new checkout; never open two. Limited to 5 per hour.
+
+## Rate limits, errors and retries
+
+| Limit | Applies to |
+|---|---|
+| 600 requests per minute per API key | Every authenticated endpoint |
+| 5 per minute per API key, shared | `POST /leads/export`, the three `POST /lead-export-history/...` calls and `POST /email-schedules/{id}/trigger` |
+| 5 per minute per API key, shared | `POST /ai/suggest-categories`, `POST /ai/generate-keywords`, `POST /ai/auto-refine/enable` |
+| 10 lead searches at a time per account | `GET /leads`, `GET /leads/preview`, `POST /leads/export` (more returns `429 lead_query_capacity_busy`) |
+| 5 per hour / 30 per hour per IP | `POST /purchase` / `POST /claim-key` |
+
+Failed requests count toward the limits. Responses carry `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` (an ISO timestamp) and, on a 429 or 503, `Retry-After` (seconds).
+
+| Status | Meaning | What to do |
+|---|---|---|
+| 400 | Bad request (`bad_request`, `validation_error` with `details`, `invalid_request`); `export_too_large` comes after the credits were charged | Fix the request; for `export_too_large` follow **XLSX limit** under **Exporting files** and do not repeat the export |
+| 401 | Missing, invalid or revoked API key | Ask the user to check `SMB_SALES_BOOST_API_KEY` |
+| 402 | `insufficient_credits` (rare: credits ran out between check and charge), or a card problem (`payment_failed`, `payment_declined`, `authentication_required`) | Read `error`; for a card problem the user updates their card in the dashboard |
+| 403 | No active subscription, or a feature not available on this account or during a trial | Explain; do not retry |
+| 404 | Unknown endpoint or id | Check the id |
+| 409 | Conflict (`plan_change_in_progress`, `already_subscribed`, `not_ready` and others); nothing changed | Show the `message`; retry only when it says so |
+| 410 | `gone`: export file expired or not stored; `plan_retired` from `POST /purchase` | For `gone`, re-export free via `/lead-export-history/re-export`; for `plan_retired`, pick a current plan |
+| 429 | Rate limit or `lead_query_capacity_busy` | Wait `Retry-After` (the script retries by itself, up to 60 s) |
+| 500 | Server error | On charging calls do NOT repeat blindly (see Rule 5) |
+| 503 | `service_unavailable`, temporary | Retry after `Retry-After` (the script does this) |
+| 524 | Network edge timeout after about 100 seconds; the server may still finish | Treat like a 500 on charging calls |
+
+Errors look like `{"error": "code", "message": "Human-readable text"}`; the script adds `httpStatus`, and `advice` where a failure may have had an effect.
+
+## Natural language examples
+
+| User says | Call |
+|---|---|
+| "Find new dental practices in Texas" | Preview, then `GET /leads` with `positiveKeywords: ["*dental*","*dentist*","*orthodont*"]`, `stateInclude: ["TX"]`, `limit`, `maxCredits` |
+| "Med spas in Florida with a buying signal this week" | `positiveKeywords: ["*med*spa*","*medical*spa*","*aesthet*","*botox*"]`, `stateInclude: ["FL"]`, `lastBuyingSignalFrom: "rel:7d"` |
+| "Auto repair shops in Chicago that just got a new phone number" | `positiveKeywords: ["*auto*repair*","*mechanic*","*body*shop*"]`, `cityInclude: ["Chicago"]`, `buyingSignalTypeFilter: ["Phone Primary"]` |
+| "Pet groomers in California, no boarding or kennels" | `positiveKeywords: ["*pet*groom*","*dog*groom*"]`, `negativeKeywords: ["*boarding*","*kennel*"]`, `stateInclude: ["CA"]` |
+| "Only leads with an email address" | add `emailPrimaryEmptyFilter: "exclude_empty"` |
+| "Well-reviewed restaurants in Atlanta" | `positiveKeywords: ["*restaurant*","*grill*","*bistro*"]`, `cityInclude: ["Atlanta"]`, `minRatingValue: 4.5`, `minReviewCount: 50` |
+| "Businesses that registered their domain in the last 3 months" | a keyword filter plus `registrationDateFrom` set to the date 3 months ago as `YYYY-MM-DD` |
+| "How many bakeries are in New York?" | `GET /leads/preview`, read `data.pagination.total` |
+| "Show me only leads I already bought" | `GET /lead-export-history` (every lead you received, paged with `limit` and `offset`, free). To limit it to one search, run `GET /leads` with that search's filters and `maxCredits: 0` on every page, because each page only keeps the already-received leads among that page's matches |
+| "Export the results but spend at most 50 credits" | `POST /leads/export` with `maxCredits: 50` |
+| "Export only leads I don't have yet" | `POST /leads/export` with `excludePurchased: true` and a `maxCredits` agreed with the user (every lead in this export costs 1 credit) |
+| "Download my export from last week" | `GET /export-history`, then `GET /export-history/{id}/download` |
+| "Get me the contact details for these 200 websites" | `POST /enrichments` (state the prices, agree on `maxCredits`, `--confirm`) |
+| "Email me new HVAC leads in Ohio every morning" | Create a positive keyword list with the HVAC keywords, then a preset whose hash has `nkl` set to that list's id and `si=OH`, create the schedule with `intervalValue: 1`, `intervalUnit: "days"` and `isActive: false`, review, then activate. There is no time-of-day setting: the first email goes out within about 15 minutes of activation and later ones about a day after the previous send, so the time drifts. Tell the user this instead of promising a fixed time |
+| "How many credits do I have?" | `GET /me`, `totalCreditsRemaining` |
+| "Buy 1,000 more credits" | Confirm the price, then `POST /purchase-credits` with `creditCount: 1000` and `--confirm` |
+| "Upgrade to Scale" | Confirm price and timing, then `POST /subscription/change-plan` with `targetPlan: "scale"` and `--confirm` |
+| "I want to sign up for Growth" | Explain the trial and charge date, then `POST /purchase` with `--confirm` |
+
+## smb_api.py reference
+
+| Option | Purpose |
+|---|---|
+| `--params JSON` / `--params-file PATH` | Query parameters (any method). Lists as JSON arrays. `-` reads stdin. |
+| `--body JSON` / `--body-file PATH` | JSON body for POST, PATCH and PUT. |
+| `--confirm` | Required for calls that charge money, authorize future charges, send email, spend credits on enrichment, cancel or delete. Add only after the user approves. |
+| `--dry-run` | Show the request (URL, body, whether `--confirm` is needed) without sending it. |
+| `--compact` | Print only key fields of each lead. |
+| `--out NAME` | Also save the full JSON response as `NAME.json` in the output folder. |
+| `--output-dir DIR` | Where files are saved. Default: `$SMB_SALES_BOOST_OUTPUT_DIR`, else `/mnt/user-data/outputs` if it exists, else `./smb-sales-boost-files`. |
+| `--idempotency-key KEY` | Reuse the key from a timed-out `POST /purchase-credits` (within 24 hours). |
+| `--timeout SEC` | Network timeout (default 180). |
+| `--no-retry` / `--no-fetch` | Do not retry 429/503 / print a download link instead of downloading. |
+
+File handling: exports, `/export-history/{id}/download`, `/export-history/{id}/download-url`, the lead-export-history files and `/enrichments/{id}/download` are saved automatically as new files (never overwriting; mode 600), and the script prints the paths. Short-lived download links are used directly and not printed, unless you pass `--no-fetch` (the printed link then works without an API key for a few minutes, so do not share or log it). Exit codes: 0 success, 1 API error (or an unexpected client error), 2 usage error or confirmation required (nothing was sent), 3 network error or timeout, 4 local file error (the script creates the output folder before sending, so a folder problem stops it before anything is charged).
 
 ## Security
 
-This skill addresses two specific agent execution risks: **shell injection** from constructing CLI commands with user input, and **arbitrary file writes** from unsanitized API-provided filenames.
+- **No shell injection:** the script sends structured JSON over HTTPS with Python's standard library; user text never becomes part of a shell command when you use `--params-file` / `--body-file` for text with quotes.
+- **Fixed destination:** requests go only to `https://smbsalesboost.com/api/v1`; endpoints are validated (no `..`, no other hosts), redirects are never followed, and the key is never sent to `/purchase` or `/claim-key`. Download links are fetched without the key, over HTTPS, and only from Amazon S3 (`amazonaws.com`) hosts.
+- **Safe files:** file names from the server are reduced to a plain base name, limited to `.csv`, `.json` and `.xlsx`, and written only inside the output folder as new files readable only by the user.
+- **Key handling:** read from `SMB_SALES_BOOST_API_KEY` and sent only in the `Authorization` header. It is never printed, logged or written to a file. Passing it as the first argument still works but exposes it to other local processes; prefer the environment variable.
+- **Confirmation gate:** money, email, deletion and enrichment calls are refused without `--confirm`.
 
-**Shell injection prevention:** The `smb_api.py` script uses Python's `requests` library for all HTTP calls. User-provided search terms, locations, and other inputs are passed as structured function arguments — never interpolated into shell command strings. This eliminates the shell injection vector that exists when agents construct `curl` commands from user input.
+## Not available through the API
 
-**Path traversal prevention in exports:** The `/leads/export` endpoint returns base64-encoded files with an API-provided `fileName` field. A malicious or corrupted filename (e.g., `../../etc/passwd`) could write files to arbitrary locations. The script enforces three safeguards:
-1. **Basename extraction:** `os.path.basename()` strips all directory components — `../../etc/passwd` becomes `passwd`
-2. **Extension validation:** Only `.csv`, `.json`, and `.xlsx` extensions are allowed; anything else defaults to `.csv`
-3. **Scoped output directory:** Files are written only to the designated output directory (`/mnt/user-data/outputs/` by default), never to user-specified or API-specified paths
-
-**API key handling:** The key is passed as a CLI argument and sent only in the Authorization header. It is never logged, written to files, or included in error output.
-
-## Error Handling
-
-| Status | Meaning |
-|--------|---------|
-| 400 | Bad request — check parameters |
-| 401 | Invalid or missing API key |
-| 402 | Insufficient credits (credit-plan users) — check credit balance with `GET /me` |
-| 403 | Active subscription required |
-| 404 | Resource not found |
-| 429 | Rate limited — check `Retry-After` header |
-| 500 | Server error |
-
-All errors return: `{ "error": "error_code", "message": "Human-readable message" }`
+These are managed in the dashboard (https://smbsalesboost.com/dashboard): creating or revoking API keys; CRM and webhook integrations (HubSpot, Salesforce, Pipedrive, Zapier, n8n, Make, Pipedream, Clay, custom webhooks), although leads you search or export through the API are still pushed to any integration the user has connected; updating the card or viewing invoices; undoing a cancellation; target categories for keyword generation; the default "email enrichment results" setting. A remote MCP server is also available at `https://smbsalesboost.com/mcp` (details: https://smbsalesboost.com/.well-known/mcp/server-card.json).
