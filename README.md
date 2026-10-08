@@ -6,7 +6,13 @@ Find and export growing local businesses with plain-language requests. This skil
 
 Ask things like "find med spas in Florida with a buying signal this week", "export 500 dental practices in Texas, spend at most 300 credits" or "get the contact details for these 200 websites", and the agent turns them into the right API calls.
 
-## What's new in version 2.1.0 (October 2026)
+## What's new in version 1.9.3 (October 2026)
+
+- **Version numbers match the GitHub releases:** what earlier notes called 2.1.0 is 1.9.2, and 2.0.0 is 1.9.1. `smb_api.py --version` and the User-Agent the script sends now report 1.9.3.
+- **Safer deletes:** before deleting a saved search (filter preset), the agent names the email schedules that will be deleted with it. When you only want something to stop, it offers to pause it instead: a paused email schedule keeps its list of recipients who unsubscribed, and a paused integration keeps its delivery log and signing secret. The script's confirmation messages say the same.
+- **Lost signing secret:** before deleting a webhook integration to get a new secret, the agent reads it and shows you its destination and events, then recreates it with the same values after you approve.
+
+## What's new in version 1.9.2 (October 2026)
 
 - **Integrations through the API:** the agent can now list, create and manage CRM and webhook integrations (HubSpot, Salesforce, Pipedrive, Zapier, n8n, Make, Pipedream, Clay and any webhook URL), send a test event, push a lead, read the delivery log and set up CRM field mappings. Integrations send lead data, including business contact details, to systems outside SMB Sales Boost, so the agent describes the destination and asks for your approval first, and every call that sets one up or sends data through it needs `--confirm`.
 - **Owner safeguards:** the dashboard shows which API key created or last re-pointed each integration (pausing it, or resuming it in the dashboard, keeps that label). When an API key creates a webhook integration, connects a CRM, changes where an integration sends data, adds events or re-enables one, the account owner is emailed for each change; during bursts of more than 10 changes in an hour, further changes are combined into summary emails. When you revoke an API key you can also pause every integration that key set up, and a CRM connect link the key asked for stops working.
@@ -14,7 +20,7 @@ Ask things like "find med spas in Florida with a buying signal this week", "expo
 - **No automatic retries for integration changes:** a `429` or `503` on a call that creates, changes or sends through an integration is returned with advice (check `GET /integrations` or the delivery log first) instead of being repeated by the script.
 - Clearer advice after a timeout (for example, check `GET /integrations` before creating a webhook again: the same URL returns `409 integration_exists`, a changed URL creates a second integration with its own signing secret, and a lost secret means delete and create again), a `--help` list of every call that needs `--confirm`, and the skill metadata now declares `python3` and the homepage.
 
-## What's new in version 2.0.0 (October 2026)
+## What's new in version 1.9.1 (October 2026)
 
 - Updated for the current API: buying-signal names and filters (`lastBuyingSignalFrom`, `buyingSignalTypeFilter`, "Last Buying Signal" and "Buying Signal Type"), the current lead fields (Total Phones, Tier 1-6 emails, founders, software, ad pixels, ratings and more) and dozens of new filters.
 - New features: URL enrichment, 90-day export history with direct downloads, free re-export of leads you already received, the overage budget, and the 14-day free trial (including trial plan switching and early activation).

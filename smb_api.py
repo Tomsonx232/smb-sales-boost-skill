@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SMB Sales Boost API client - part of the smb-sales-boost agent skill (v2.1.0).
+SMB Sales Boost API client - part of the smb-sales-boost agent skill (v1.9.3).
 
 One dependency-free command (Python 3.8+ standard library only) for every
 SMB Sales Boost REST API call. It handles authentication, parameter encoding,
@@ -109,7 +109,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "2.1.0"
+__version__ = "1.9.3"
 
 API_ORIGIN = "https://smbsalesboost.com"
 API_PREFIX = "/api/v1"
@@ -587,11 +587,15 @@ def confirmation_reason(method, path, body, query=None):
         if INTEGRATION_ID_RE.fullmatch(path):
             return ("it permanently deletes the integration with its event subscriptions and delivery log; "
                     "lead data stops going to that destination, and a webhook's signing secret cannot be "
-                    "recovered (a new integration gets a new one)")
+                    "recovered (a new integration gets a new one); to stop sending without losing them, pause "
+                    "it instead (PATCH /integrations/{id} with {\"status\": \"disabled\"} needs no --confirm)")
         if path.startswith("/filter-presets/"):
-            return "it permanently deletes the preset AND every email schedule that uses it"
+            return ("it permanently deletes the preset AND every email schedule that uses it (list them first: "
+                    "GET /email-schedules, the ones whose filterPresetId is this preset's id, and name them "
+                    "to the user)")
         if path.startswith("/email-schedules/"):
-            return "it permanently deletes the schedule and its list of recipients who unsubscribed"
+            return ("it permanently deletes the schedule and its list of recipients who unsubscribed; to stop it "
+                    "without losing that list, pause it instead (PATCH /email-schedules/{id} with {\"isActive\": false})")
         return "it permanently deletes data"
     if method == "POST":
         if path == "/purchase":
