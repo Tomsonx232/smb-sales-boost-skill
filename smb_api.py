@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SMB Sales Boost API client - part of the smb-sales-boost agent skill (v1.9.3).
+SMB Sales Boost API client - part of the smb-sales-boost agent skill (v1.9.4).
 
 One dependency-free command (Python 3.8+ standard library only) for every
 SMB Sales Boost REST API call. It handles authentication, parameter encoding,
@@ -109,7 +109,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "1.9.3"
+__version__ = "1.9.4"
 
 API_ORIGIN = "https://smbsalesboost.com"
 API_PREFIX = "/api/v1"
@@ -632,7 +632,10 @@ def confirmation_reason(method, path, body, query=None):
         if INTEGRATION_CONNECT_RE.fullmatch(path):
             return ("it starts connecting a CRM: once the user opens the returned link and approves, lead "
                     "data (business contact details) is sent to that CRM automatically on every subscribed "
-                    "event, and the account owner is emailed about it")
+                    "event, and the account owner is emailed about it (signing in to a CRM account that is "
+                    "already connected re-authorizes that integration instead: its events, field mapping and "
+                    "delivery history are kept, a paused one stays paused, and a needs_attention one starts "
+                    "sending again; the owner is then emailed only in that last case)")
         if INTEGRATION_RETRY_RE.fullmatch(path):
             return "it sends that delivery again right now, so %s" % OUTSIDE_DESTINATION
         if INTEGRATION_MAPPING_TEST_RE.fullmatch(path):
@@ -644,7 +647,9 @@ def confirmation_reason(method, path, body, query=None):
                     "system (for a CRM it creates a real test record that is not removed)")
         if send:
             return ("it sends one lead right now, so %s; a leadId you have not received before costs "
-                    "1 credit and also goes to your other integrations subscribed to lead.created"
+                    "1 credit and also goes to your other integrations subscribed to lead.created, and a "
+                    "leadId you already received goes to your other integrations subscribed to lead.updated "
+                    "when it changed since you last received it (a newer Last Buying Signal)"
                     % OUTSIDE_DESTINATION)
     if method == "PATCH":
         if INTEGRATION_MAPPING_RE.fullmatch(path):
@@ -715,7 +720,8 @@ ADVICE_AFTER_FAILURE = {
         "A checkout session may have been created. Do not start a second checkout; ask the user whether "
         "the checkout link was opened."),
     ("POST", "/lead-export-history/refresh-and-export"): (
-        "The snapshots may already have been refreshed. Retrying is free."),
+        "The snapshots may already have been refreshed, and lead.updated sent to your integrations for "
+        "leads with newer data (a repeat does not send it again for the same data). Retrying is free."),
     ("POST", "/integrations/webhook"): (
         "The integration may have been created. Check GET /integrations before trying again. Repeating "
         "the same provider and targetUrl returns 409 integration_exists; a different provider or a changed "

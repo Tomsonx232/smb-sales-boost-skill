@@ -6,6 +6,20 @@ Find and export growing local businesses with plain-language requests. This skil
 
 Ask things like "find med spas in Florida with a buying signal this week", "export 500 dental practices in Texas, spend at most 300 credits" or "get the contact details for these 200 websites", and the agent turns them into the right API calls.
 
+## What's new in version 1.9.4 (October 2026)
+
+Updated for this month's integration changes:
+
+- **`lead.updated` only for real changes:** it is now sent when a lead you already received reaches your account again with a newer Last Buying Signal than when you last received it (an export or email schedule that includes it, a push to another integration, or a `GET /leads` page or MCP `search_leads` call that returns it), or when a Lead Export History refresh finds that newer data (except for leads on your export blacklist). Receiving an unchanged lead again sends nothing.
+- **Fuller event samples:** `export.completed` and `email_schedule.sent` now fill in `sampleLeads` (up to 5 leads, each with id, companyName, website, email, phone, city and state); before, only the id had a value.
+- **One lead shape for webhooks:** a `leadId` push to a webhook sends the same flat lead summary as a live `lead.created` event, with source `crm_push`. A push of your own data still sends `{"lead": <your object as sent>, "source": "manual_push"}`.
+- **HubSpot Companies:** HubSpot integrations create or update Contacts matched by email (a lead without an email creates no Contact) and Companies matched by website domain, or by exact company name when the lead has no website of its own (none, or a social or listing page such as Facebook or Yelp), and link each Contact to its Company. Before, every delivery added a new Company. If HubSpot does not confirm which account you signed in to, a connection now stops with nothing connected or changed: try again a minute later.
+- **Reconnect a CRM:** connecting a CRM account that is already connected re-authorizes that integration in place: it gets new access, a `needs_attention` integration becomes connected again, a paused one stays paused, and its events, field mapping, Pipedrive deal settings and delivery history are kept. The 25-integration limit applies only to new connections. The agent uses this when a CRM integration needs attention because its access was removed or expired, and the dashboard has a Reconnect button for each CRM integration.
+- **CRM events and pacing:** HubSpot, Salesforce and Pipedrive integrations take only `lead.created` and `lead.updated`; a subscription to any other event returns `400 validation_error`. Deliveries to these CRMs are sent at most 3 at a time per integration, and HubSpot calls are paced to HubSpot's rate limits, so a large export reaches the CRM gradually.
+- **Every push and retry counts:** every push (HubSpot and Salesforce included) is recorded in the integration's deliveries and counts toward `needs_attention` like any other delivery, and so does a retry that could not reach the destination.
+- **Lead export history:** on refresh and refresh-and-export, an invalid date or filter value returns `400` with a message naming it (an invalid date used to cause a server error), and refresh-and-export checks everything before it changes any entry.
+- `smb_api.py --version` and the User-Agent the script sends now report 1.9.4.
+
 ## What's new in version 1.9.3 (October 2026)
 
 - **Version numbers match the GitHub releases:** what earlier notes called 2.1.0 is 1.9.2, and 2.0.0 is 1.9.1. `smb_api.py --version` and the User-Agent the script sends now report 1.9.3.
@@ -98,7 +112,7 @@ Never paste your API key into a chat, a shared document or version control.
 - **Enrich websites:** "Get the phone numbers and emails for these 200 websites"
 - **Automate:** "Email new HVAC leads in Ohio to my team every day", "Split leads evenly among my reps"
 - **Keywords and categories:** "What kinds of businesses should I target?", "Turn on auto-refine for my keyword list"
-- **Integrations:** "Send every new lead to my Zapier webhook", "Connect my HubSpot", "Are my integrations working?", "Pause the Make integration"
+- **Integrations:** "Send every new lead to my Zapier webhook", "Connect my HubSpot", "Are my integrations working?", "Reconnect my HubSpot", "Pause the Make integration"
 - **Account:** "How many credits do I have?", "Buy 1,000 more credits", "Upgrade to Growth", "Set up auto top-up", "Cancel my subscription"
 - **Sign up:** "I want to start a Starter trial"
 

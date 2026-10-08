@@ -95,7 +95,7 @@
         ],
         "operationId": "listIntegrationProviders",
         "summary": "List integration providers",
-        "description": "Returns the provider catalog with runtime availability. The webhook providers (Zapier, n8n, Make, Pipedream, Clay, Generic Webhook) are always available. HubSpot, Salesforce and Pipedrive are available when they are configured for this deployment; otherwise available is false and creating or connecting them returns 503 provider_unavailable.",
+        "description": "Returns the provider catalog with runtime availability. The webhook providers (Zapier, n8n, Make, Pipedream, Clay, Generic Webhook) are always available. HubSpot, Salesforce and Pipedrive are available when they are configured for this deployment; otherwise available is false and creating or connecting them returns 503 provider_unavailable. HubSpot, Salesforce and Pipedrive integrations take only lead.created and lead.updated; a subscription to any other event returns 400 validation_error.",
         "responses": {
           "200": {
             "description": "Provider catalog",
@@ -554,7 +554,7 @@
         ],
         "operationId": "updateIntegration",
         "summary": "Update an integration",
-        "description": "Updates the display name, status, event subscriptions, destination URL, header API key or Pipedrive deal settings. Sending subscriptions replaces the whole subscription set. A webhook subscription sent without targetUrl uses defaultTargetUrl when it is sent; otherwise it keeps that event's current URL, or takes the integration's first URL for a new event. defaultTargetUrl sent without subscriptions re-points every existing subscription (inactive ones too). Set status to disabled to pause all sending, or to connected to resume it (from disabled or needs_attention; this counts as re-enabling). needs_attention is set only by SMB Sales Boost: sending it returns 400 validation_error (unless the integration is already needs_attention, which is a no-op). Every URL must be a public https URL. If the integration sends a header API key (X-SMB-API-Key) and the request points any subscription at a destination URL the integration did not already use (any new URL, even on the same host, since services like Zapier, Make and Clay put every customer's hooks on one host), send apiKey in the same request (a new value, or null to stop sending it); otherwise the request is rejected with 400 and nothing changes. apiKey itself applies only to Clay integrations and to webhook integrations that already send a header API key (400 bad_request otherwise, and on a CRM); null or an empty string stops sending it. Changing a destination (any new targetUrl, on an active or inactive subscription), adding or re-activating an event, or re-enabling the integration changes where lead data goes, so confirm it with the account owner first. Safeguard: when an API key (REST or MCP) creates a webhook, connects a CRM, changes where an integration sends data, adds or re-activates an event, or re-enables an integration, SMB Sales Boost records the key on the integration (createdVia / lastChangedVia, shown in the dashboard as 'Created via API key smbk_...') and emails the account owner. A dashboard change replaces that record only when it adds a destination URL the integration never had; pausing an integration (also the pause offered when an API key is revoked), and resuming it, switching on more events or switching on a URL it already had from the dashboard, keep it, so an integration an API key re-pointed still shows the key. The account owner is emailed for each change. During bursts of more than 10 changes in an hour, further changes are combined into summary emails. If the integration changes while the update is being applied (for example the owner pauses it at the same moment), the update reads it again and is applied once more on top of that change (every check runs again on the new state); only if it changes again does the request return 409 conflict ('The integration changed while this update was being applied. Read it again and retry.'), and then nothing changes: read the integration again (GET /integrations/{id}) and retry. If the API key making the request is revoked in that moment, the request returns 401 unauthorized ('This API key has been revoked') and nothing is applied.",
+        "description": "Updates the display name, status, event subscriptions, destination URL, header API key or Pipedrive deal settings. Sending subscriptions replaces the whole subscription set. HubSpot, Salesforce and Pipedrive integrations take only lead.created and lead.updated; a subscription to any other event (active or not) returns 400 validation_error ('<Provider> integrations accept only lead.created and lead.updated.', with one details entry per refused subscription) and nothing is saved. A webhook subscription sent without targetUrl uses defaultTargetUrl when it is sent; otherwise it keeps that event's current URL, or takes the integration's first URL for a new event. defaultTargetUrl sent without subscriptions re-points every existing subscription (inactive ones too). Set status to disabled to pause all sending, or to connected to resume it (from disabled or needs_attention; this counts as re-enabling). needs_attention is set only by SMB Sales Boost: sending it returns 400 validation_error (unless the integration is already needs_attention, which is a no-op). Every URL must be a public https URL. If the integration sends a header API key (X-SMB-API-Key) and the request points any subscription at a destination URL the integration did not already use (any new URL, even on the same host, since services like Zapier, Make and Clay put every customer's hooks on one host), send apiKey in the same request (a new value, or null to stop sending it); otherwise the request is rejected with 400 and nothing changes. apiKey itself applies only to Clay integrations and to webhook integrations that already send a header API key (400 bad_request otherwise, and on a CRM); null or an empty string stops sending it. Changing a destination (any new targetUrl, on an active or inactive subscription), adding or re-activating an event, or re-enabling the integration changes where lead data goes, so confirm it with the account owner first. Safeguard: when an API key (REST or MCP) creates a webhook, connects a CRM, changes where an integration sends data, adds or re-activates an event, or re-enables an integration, SMB Sales Boost records the key on the integration (createdVia / lastChangedVia, shown in the dashboard as 'Created via API key smbk_...') and emails the account owner. A dashboard change replaces that record only when it adds a destination URL the integration never had; pausing an integration (also the pause offered when an API key is revoked), and resuming it, switching on more events or switching on a URL it already had from the dashboard, keep it, so an integration an API key re-pointed still shows the key. The account owner is emailed for each change. During bursts of more than 10 changes in an hour, further changes are combined into summary emails. If the integration changes while the update is being applied (for example the owner pauses it at the same moment), the update reads it again and is applied once more on top of that change (every check runs again on the new state); only if it changes again does the request return 409 conflict ('The integration changed while this update was being applied. Read it again and retry.'), and then nothing changes: read the integration again (GET /integrations/{id}) and retry. If the API key making the request is revoked in that moment, the request returns 401 unauthorized ('This API key has been revoked') and nothing is applied.",
         "parameters": [
           {
             "name": "id",
@@ -622,7 +622,8 @@
                           "nullable": true
                         }
                       }
-                    }
+                    },
+                    "description": "Replaces the whole subscription set (max 20): an event left out stops being sent. HubSpot, Salesforce and Pipedrive integrations take only lead.created and lead.updated; a subscription to any other event returns 400 validation_error."
                   },
                   "defaultTargetUrl": {
                     "type": "string",
@@ -697,7 +698,7 @@
             }
           },
           "400": {
-            "description": "validation_error (details lists the problems, including status needs_attention on an integration that is not already needs_attention) or bad_request (invalid id, unsafe URL, defaultTargetUrl on a CRM integration, 'apiKey only applies to webhook integrations' (apiKey on a CRM), 'apiKey only applies to Clay integrations and to webhook integrations that already send a header API key', pipedriveDeals on a non-Pipedrive integration, deals enabled without a pipeline and stage, or 'This integration sends a header API key. Pointing it at a new destination URL requires apiKey in the same request (a new value, or null to stop sending it).').",
+            "description": "validation_error (details lists the problems, including status needs_attention on an integration that is not already needs_attention, and, on a HubSpot, Salesforce or Pipedrive integration, a subscription to an event other than lead.created or lead.updated: '<Provider> integrations accept only lead.created and lead.updated.') or bad_request (invalid id, unsafe URL, defaultTargetUrl on a CRM integration, 'apiKey only applies to webhook integrations' (apiKey on a CRM), 'apiKey only applies to Clay integrations and to webhook integrations that already send a header API key', pipedriveDeals on a non-Pipedrive integration, deals enabled without a pipeline and stage, or 'This integration sends a header API key. Pointing it at a new destination URL requires apiKey in the same request (a new value, or null to stop sending it).').",
             "content": {
               "application/json": {
                 "schema": {
@@ -903,7 +904,7 @@
         ],
         "operationId": "listIntegrationDeliveries",
         "summary": "List recent deliveries",
-        "description": "Returns the newest 50 delivery attempts for the integration.",
+        "description": "Returns the newest 50 delivery attempts for the integration. Live events, pushes, tests and retries are all recorded. 5 failed deliveries in a row set the integration to needs_attention (live events to it stop and pushes are refused until it is re-enabled). One failed delivery is, for example, a live webhook event whose 5 attempts all failed, a failed CRM write, a failed push, a retry that could not reach the destination, or a test the destination rejected.",
         "parameters": [
           {
             "name": "id",
@@ -1020,7 +1021,7 @@
         ],
         "operationId": "retryIntegrationDelivery",
         "summary": "Retry a delivery",
-        "description": "Sends the stored payload of a past delivery again, to the URL it was first sent to (webhooks; even if that subscription is now inactive or points elsewhere) or to the connected CRM. Lead data leaves SMB Sales Boost again, so confirm with the account owner first. No credits are charged. A paused integration (status disabled) must be re-enabled first (PATCH status connected). If the retry succeeds on a needs_attention integration, the integration returns to connected; that counts as re-enabling it (recorded in lastChangedVia, owner emailed). A failed attempt returns 200 with status failed.",
+        "description": "Sends the stored payload of a past delivery again, to the URL it was first sent to (webhooks; even if that subscription is now inactive or points elsewhere) or to the connected CRM. A webhook gets the same event data again in a new signed envelope (a new event id and occurredAt). Lead data leaves SMB Sales Boost again, so confirm with the account owner first. No credits are charged. A paused integration (status disabled) must be re-enabled first (PATCH status connected). If the retry succeeds on a needs_attention integration, the integration returns to connected; that counts as re-enabling it (recorded in lastChangedVia, owner emailed). A CRM (HubSpot, Salesforce, Pipedrive) re-sends only lead.created and lead.updated deliveries: an older delivery of any other event returns 200 with status failed ('CRM integrations receive only lead.created and lead.updated, so this <eventType> delivery cannot be retried.') and nothing is sent or recorded. Otherwise the retry is recorded in GET /integrations/{id}/deliveries, and a failed retry (also one that could not reach the destination, such as a timeout or an unreachable host) counts toward needs_attention like any other delivery. A failed attempt returns 200 with status failed.",
         "parameters": [
           {
             "name": "id",
@@ -1158,7 +1159,7 @@
         ],
         "operationId": "testIntegration",
         "summary": "Send a test event",
-        "description": "Sends a synthetic signed lead.created event (a sample business named Acme Test Co) to the real destination. For a CRM this creates a real test record in the CRM that is not removed afterwards. Confirm with the account owner first. Webhook test events and pushes only ever use an active subscription: the active one for the event, else any active subscription with a targetUrl; with none, the attempt fails with 'No active subscription for this integration'. A paused integration (status disabled) must be re-enabled first (PATCH status connected). If the test succeeds on a needs_attention integration, the integration returns to connected; that counts as re-enabling it (recorded in lastChangedVia, owner emailed). A failed attempt returns 200 with status failed.",
+        "description": "Sends a synthetic signed lead.created event (a sample business named Acme Test Co) to the real destination. For a CRM this creates a real test record in the CRM that is not removed afterwards (HubSpot: the sample has no email, so it creates no Contact, only an Acme Test Co Company matched by the website domain example.com). Confirm with the account owner first. Webhook test events and pushes only ever use an active subscription: the active one for the event, else any active subscription with a targetUrl; with none, the attempt fails with 'No active subscription for this integration'. A paused integration (status disabled) must be re-enabled first (PATCH status connected). If the test succeeds on a needs_attention integration, the integration returns to connected; that counts as re-enabling it (recorded in lastChangedVia, owner emailed). A failed attempt returns 200 with status failed.",
         "parameters": [
           {
             "name": "id",
@@ -1287,7 +1288,7 @@
         ],
         "operationId": "pushLeadToIntegration",
         "summary": "Push one lead to an integration",
-        "description": "Sends one lead to the integration now. Send leadId to push a lead from the SMB Sales Boost database: it is tracked like an export (it appears in lead export history with method crm_push), costs 1 credit when the lead is new to you and nothing when you already received it (a lead you already own is pushed free even at a 0 balance; a new lead without credits returns 402), respects your export blacklist, and only the fields an export includes are sent. Send lead to push your own data instead: untracked and free. The integration must be connected (status connected). Confirm with the account owner first: the lead's business contact details leave SMB Sales Boost. The target integration receives the lead once, from this push only: it is left out of the background lead.created / lead.updated events the push triggers. Your OTHER integrations still get those events: a tracked lead you had not received before counts as received and sends lead.created to your other integrations subscribed to lead.created, and re-pushing a lead you already received sends lead.updated to your other integrations subscribed to lead.updated. Webhook test events and pushes only ever use an active subscription: the active one for the event, else any active subscription with a targetUrl; with none, the attempt fails with 'No active subscription for this integration'. Pushes through the API or MCP (and the dashboard's per-lead push) are recorded in GET /integrations/{id}/deliveries, HubSpot and Salesforce included; a push refused before anything is sent (for example 'No active subscription for this integration', answered as 200 with status failed, tracked false and creditsUsed 0) is not charged, not added to your export history, triggers no events and is not recorded. After a timeout, check the deliveries (and, for a CRM, the CRM itself) before pushing again.",
+        "description": "Sends one lead to the integration now. Send leadId to push a lead from the SMB Sales Boost database: it is tracked like an export (it appears in lead export history with method crm_push), costs 1 credit when the lead is new to you and nothing when you already received it (a lead you already own is pushed free even at a 0 balance; a new lead without credits returns 402), respects your export blacklist, and only the fields an export includes are sent. Send lead to push your own data instead: untracked and free. The integration must be connected (status connected). Confirm with the account owner first: the lead's business contact details leave SMB Sales Boost. The target integration receives the lead once, from this push only: it is left out of the background lead.created / lead.updated events the push triggers. Your OTHER integrations still get those events: a tracked lead you had not received before counts as received and sends lead.created to your other integrations subscribed to lead.created, and re-pushing a lead you already received sends lead.updated to your other integrations subscribed to lead.updated only when the lead changed since you last received it (a newer Last Buying Signal). A leadId push to a webhook sends the same flat lead summary as a live lead.created event, with source crm_push. A push of your own data sends {\"lead\": <your object as sent>, \"source\": \"manual_push\"}. Webhook test events and pushes only ever use an active subscription: the active one for the event, else any active subscription with a targetUrl; with none, the attempt fails with 'No active subscription for this integration'. Every push is recorded in the integration's deliveries (GET /integrations/{id}/deliveries) and counts toward needs_attention like any other delivery: after 5 failed deliveries in a row the integration is needs_attention, and push-lead returns 400 until it is re-enabled. A push refused before anything is sent (for example 'No active subscription for this integration', answered as 200 with status failed, tracked false and creditsUsed 0) is not charged, not added to your export history, triggers no events and is not recorded. After a timeout, check the deliveries (and, for a CRM, the CRM itself) before pushing again.",
         "parameters": [
           {
             "name": "id",
@@ -1364,7 +1365,7 @@
             }
           },
           "400": {
-            "description": "validation_error or bad_request (invalid id, neither leadId nor lead, or the integration is not connected).",
+            "description": "validation_error or bad_request (invalid id, neither leadId nor lead, or the integration is not connected, for example 'Integration is not connected (status: needs_attention). Re-enable it with PATCH status \"connected\" first.').",
             "content": {
               "application/json": {
                 "schema": {
@@ -1481,7 +1482,7 @@
         ],
         "operationId": "connectCrmIntegration",
         "summary": "Start connecting a CRM",
-        "description": "Starts the OAuth connection for HubSpot, Salesforce or Pipedrive and returns authorizationUrl. Nothing is connected yet: the user must open authorizationUrl in a browser and approve access within 10 minutes. The CRM integration then appears in GET /integrations and starts receiving lead data on its initial events (HubSpot: lead.created on, lead.updated present but off - turn it on with PATCH /integrations/{id}; Salesforce: lead.created; Pipedrive: lead.created and lead.updated). GET /integrations shows the real isActive of each event. Only share the URL with the account owner: whoever approves it attaches their CRM to this account. If the API key that started the connection is revoked before the user approves, nothing is connected and the browser lands on the dashboard with <provider>_error=key_revoked. The CRMs are available when they are configured for this deployment; otherwise this returns 503 provider_unavailable. Any other provider in the path returns 404 not_found. Safeguard: when an API key (REST or MCP) creates a webhook, connects a CRM, changes where an integration sends data, adds or re-activates an event, or re-enables an integration, SMB Sales Boost records the key on the integration (createdVia / lastChangedVia, shown in the dashboard as 'Created via API key smbk_...') and emails the account owner. The account owner is emailed for each change. During bursts of more than 10 changes in an hour, further changes are combined into summary emails.",
+        "description": "Starts the OAuth connection for HubSpot, Salesforce or Pipedrive and returns authorizationUrl. Nothing is connected yet: the user must open authorizationUrl in a browser and approve access within 10 minutes. The CRM integration then appears in GET /integrations and starts receiving lead data on its initial events (HubSpot: lead.created on, lead.updated present but off - turn it on with PATCH /integrations/{id}; Salesforce: lead.created; Pipedrive: lead.created and lead.updated). GET /integrations shows the real isActive of each event. Deliveries to HubSpot, Salesforce and Pipedrive are sent at most 3 at a time per integration, and HubSpot calls are paced to HubSpot's rate limits, so a large export reaches the CRM gradually. Connecting a CRM account that is already connected re-authorizes that integration in place: it gets new access, a needs_attention integration becomes connected again, a paused one stays paused, and its events, field mapping, Pipedrive deal settings and delivery history are kept. The 25-integration limit applies only to new connections. Use this endpoint to reconnect a CRM integration that lost access (to reconnect a Salesforce sandbox integration, send environment sandbox); signing in to a different account of the same CRM creates a new integration. A reconnect started with an API key that turns a needs_attention integration back to connected counts as re-enabling it (recorded in lastChangedVia, owner emailed); a reconnect that only refreshes access sends no notice. If HubSpot does not confirm which HubSpot account the user signed in to, nothing is connected or changed and the browser lands on the dashboard with hubspot_error carrying the message 'We could not confirm which HubSpot account you signed in to, so nothing was connected or changed. Please try connecting again in a minute.' Only share the URL with the account owner: whoever approves it attaches their CRM to this account. If the API key that started the connection is revoked before the user approves, nothing is connected and the browser lands on the dashboard with <provider>_error=key_revoked. The CRMs are available when they are configured for this deployment; otherwise this returns 503 provider_unavailable. Any other provider in the path returns 404 not_found. Safeguard: when an API key (REST or MCP) creates a webhook, connects a CRM, changes where an integration sends data, adds or re-activates an event, or re-enables an integration, SMB Sales Boost records the key on the integration (createdVia / lastChangedVia, shown in the dashboard as 'Created via API key smbk_...') and emails the account owner. The account owner is emailed for each change. During bursts of more than 10 changes in an hour, further changes are combined into summary emails.",
         "parameters": [
           {
             "name": "provider",
@@ -1511,7 +1512,7 @@
                       "sandbox"
                     ],
                     "default": "production",
-                    "description": "Salesforce only: which org to connect"
+                    "description": "Salesforce only: which org to connect (production by default). To reconnect a sandbox integration, send sandbox."
                   }
                 }
               }
@@ -1581,7 +1582,7 @@
             }
           },
           "409": {
-            "description": "integration_limit: the account already has 25 integrations; delete one before connecting another.",
+            "description": "integration_limit: the account already has 25 integrations and none of them is an integration of this CRM that a sign-in could re-authorize; delete one before connecting another. (With such an integration the connection starts: signing in to that same CRM account re-authorizes it, while a CRM account that is not connected yet is refused in the browser with <provider>_error=integration_limit and nothing is created.)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2556,7 +2557,7 @@
         "security": [],
         "operationId": "hubspotOAuthCallback",
         "summary": "HubSpot OAuth redirect (browser only)",
-        "description": "The redirect URI registered with HubSpot. HubSpot sends the user's browser here after they approve the authorizationUrl from POST /integrations/hubspot/connect; API clients never call it. It creates the integration and redirects to the dashboard Integrations tab. On failure the redirect carries hubspot_error=<reason>, for example key_revoked (the API key that started the connection was revoked; nothing was created), already_connected or integration_limit.",
+        "description": "The redirect URI registered with HubSpot. HubSpot sends the user's browser here after they approve the authorizationUrl from POST /integrations/hubspot/connect; API clients never call it. It creates the integration, or re-authorizes the integration already connected to that HubSpot account (new access; its events, field mapping and delivery history are kept), and redirects to the dashboard Integrations tab with hubspot_connected=1 (plus hubspot_reconnected=1 for a re-authorize, and hubspot_paused=1 when that integration is still paused). On failure the redirect carries hubspot_error=<reason>, for example key_revoked (the API key that started the connection was revoked; nothing was created or changed), integration_limit (the account has 25 integrations and this HubSpot account is not connected yet; nothing was created) or, rarely, already_connected (two connections of the same account finished at the same moment), or the message 'We could not confirm which HubSpot account you signed in to, so nothing was connected or changed. Please try connecting again in a minute.' when HubSpot did not confirm the account (nothing was created or changed).",
         "parameters": [
           {
             "in": "query",
@@ -2596,7 +2597,7 @@
         "security": [],
         "operationId": "salesforceOAuthCallback",
         "summary": "Salesforce OAuth redirect (browser only)",
-        "description": "The redirect URI registered with Salesforce. Salesforce sends the user's browser here after they approve the authorizationUrl from POST /integrations/salesforce/connect; API clients never call it. It creates the integration and redirects to the dashboard Integrations tab. On failure the redirect carries salesforce_error=<reason>, for example key_revoked (the API key that started the connection was revoked; nothing was created), already_connected or integration_limit.",
+        "description": "The redirect URI registered with Salesforce. Salesforce sends the user's browser here after they approve the authorizationUrl from POST /integrations/salesforce/connect; API clients never call it. It creates the integration, or re-authorizes the integration already connected to that Salesforce account (new access; its events, field mapping and delivery history are kept), and redirects to the dashboard Integrations tab with salesforce_connected=1 (plus salesforce_reconnected=1 for a re-authorize, and salesforce_paused=1 when that integration is still paused). On failure the redirect carries salesforce_error=<reason>, for example key_revoked (the API key that started the connection was revoked; nothing was created or changed), integration_limit (the account has 25 integrations and this Salesforce account is not connected yet; nothing was created) or, rarely, already_connected (two connections of the same account finished at the same moment).",
         "parameters": [
           {
             "in": "query",
@@ -2636,7 +2637,7 @@
         "security": [],
         "operationId": "pipedriveOAuthCallback",
         "summary": "Pipedrive OAuth redirect (browser only)",
-        "description": "The redirect URI registered with Pipedrive. Pipedrive sends the user's browser here after they approve the authorizationUrl from POST /integrations/pipedrive/connect; API clients never call it. It creates the integration and redirects to the dashboard Integrations tab. On failure the redirect carries pipedrive_error=<reason>, for example key_revoked (the API key that started the connection was revoked; nothing was created), already_connected or integration_limit.",
+        "description": "The redirect URI registered with Pipedrive. Pipedrive sends the user's browser here after they approve the authorizationUrl from POST /integrations/pipedrive/connect; API clients never call it. It creates the integration, or re-authorizes the integration already connected to that Pipedrive account (new access; its events, field mapping, Pipedrive deal settings and delivery history are kept), and redirects to the dashboard Integrations tab with pipedrive_connected=1 (plus pipedrive_reconnected=1 for a re-authorize, and pipedrive_paused=1 when that integration is still paused). On failure the redirect carries pipedrive_error=<reason>, for example key_revoked (the API key that started the connection was revoked; nothing was created or changed), integration_limit (the account has 25 integrations and this Pipedrive account is not connected yet; nothing was created) or, rarely, already_connected (two connections of the same account finished at the same moment).",
         "parameters": [
           {
             "in": "query",
@@ -6127,7 +6128,7 @@
         ],
         "operationId": "refreshLeadExportHistory",
         "summary": "Refresh lead snapshots with live data",
-        "description": "Updates stored lead snapshots with the latest data from the live database. No credits charged. Accepts either an explicit list of tracking IDs or a filter object to select all matching records. Up to 5,000 tracking ids per request (a filters selection counts too). Counts toward the 5 per minute export rate limit.",
+        "description": "Updates stored lead snapshots with the latest data from the live database. No credits charged. Accepts either an explicit list of tracking IDs or a filter object to select all matching records. Up to 5,000 tracking ids per request (a filters selection counts too). Counts toward the 5 per minute export rate limit. A refresh that finds newer data for a lead sends lead.updated to your integrations, unless the lead is on your export blacklist. When the selection comes from filters (no trackingIds array), an invalid filters.dateFrom or filters.dateTo (not a valid date with a year from 1 to 9999) returns 400 bad_request ('filters.dateFrom must be a valid date (e.g. 2026-08-18)', or the same for filters.dateTo), and a filters.databaseType or filters.exportMethod that is not a string returns 400 bad_request ('filters.databaseType must be a string' or 'filters.exportMethod must be a string'). With a trackingIds array the filters are ignored.",
         "requestBody": {
           "required": true,
           "content": {
@@ -6206,7 +6207,7 @@
                               },
                               "changed": {
                                 "type": "boolean",
-                                "description": "True when the live lead has a newer buying signal than the stored snapshot"
+                                "description": "True when the live lead has a newer buying signal than the stored snapshot (such an entry sends lead.updated to your integrations, unless the lead is on your export blacklist)"
                               },
                               "changedFields": {
                                 "type": "array",
@@ -6250,7 +6251,7 @@
         ],
         "operationId": "refreshAndExportLeadHistory",
         "summary": "Refresh snapshots and export as file",
-        "description": "Refreshes stored lead snapshots with live data then immediately exports them as a downloadable file. All selected IDs must be from the same database type. No credits charged. Accepts either trackingIds or a filters object. Up to 5,000 tracking ids per request (a filters selection counts too). Counts toward the 5 per minute export rate limit. Always returns a single file (export format file splitting is not applied).",
+        "description": "Refreshes stored lead snapshots with live data then immediately exports them as a downloadable file. All selected IDs must be from the same database type. No credits charged. Accepts either trackingIds or a filters object. Up to 5,000 tracking ids per request (a filters selection counts too). Counts toward the 5 per minute export rate limit. Always returns a single file (export format file splitting is not applied). Everything is checked before any entry changes: a 400 or 404 response leaves the entries unchanged (snapshots, leadLastUpdated and lastChangedFields). A successful call refreshes the snapshots and clears lastChangedFields on the selected entries. A refresh that finds newer data for a lead sends lead.updated to your integrations, unless the lead is on your export blacklist. When the selection comes from filters (no trackingIds array), an invalid filters.dateFrom or filters.dateTo (not a valid date with a year from 1 to 9999) returns 400 bad_request ('filters.dateFrom must be a valid date (e.g. 2026-08-18)', or the same for filters.dateTo), and a filters.databaseType or filters.exportMethod that is not a string returns 400 bad_request ('filters.databaseType must be a string' or 'filters.exportMethod must be a string'). With a trackingIds array the filters are ignored.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9958,7 +9959,7 @@
               "disabled",
               "needs_attention"
             ],
-            "description": "connected = sending; disabled = paused by the owner or an API key (nothing is sent); needs_attention = set by SMB Sales Boost after repeated delivery failures (background events are not sent until it is re-enabled). You can only set connected or disabled."
+            "description": "connected = sending; disabled = paused by the owner or an API key (nothing is sent); needs_attention = set by SMB Sales Boost after 5 failed deliveries in a row, pushes, tests and retries included (background events are not sent and pushes are refused until it is re-enabled; a CRM integration also becomes connected again when the same CRM account is connected again). You can only set connected or disabled."
           },
           "metadata": {
             "type": "object",
@@ -9967,7 +9968,8 @@
             "description": "null for webhook integrations (Zapier, n8n, Make, Pipedream, Clay, Generic Webhook). For CRMs: connection details (hubId / instanceUrl / apiDomain), cached field lists, the field mapping and Pipedrive deal settings."
           },
           "consecutiveFailures": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Failed deliveries in a row (live events, pushes, tests and retries all count); 5 set status needs_attention. One failed delivery is, for example, a live webhook event whose 5 attempts all failed, a failed CRM write, a failed push, a retry that could not reach the destination, or a test the destination rejected. A successful delivery, re-enabling the integration, or reconnecting the same CRM account resets it to 0."
           },
           "lastFailureAt": {
             "type": "string",
@@ -10025,7 +10027,7 @@
                 }
               }
             },
-            "description": "Event subscriptions. Each active subscription sends lead data to its targetUrl (webhooks) or the connected CRM on every matching event."
+            "description": "Event subscriptions. Each active subscription sends lead data to its targetUrl (webhooks) or the connected CRM on every matching event. HubSpot, Salesforce and Pipedrive integrations take only lead.created and lead.updated; a subscription to any other event returns 400 validation_error."
           },
           "createdVia": {
             "allOf": [
