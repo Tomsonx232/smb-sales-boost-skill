@@ -6,6 +6,10 @@ Find and export growing local businesses with plain-language requests. This skil
 
 Ask things like "find med spas in Florida with a buying signal this week", "export 500 dental practices in Texas, spend at most 300 credits" or "get the contact details for these 200 websites", and the agent turns them into the right API calls.
 
+## What's new in version 1.9.5 (October 2026)
+
+- Version number only: this release has the same content as 1.9.4 and is published as 1.9.5. `smb_api.py --version` and the User-Agent the script sends now report 1.9.5.
+
 ## What's new in version 1.9.4 (October 2026)
 
 Updated for this month's integration changes:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SMB Sales Boost API client - part of the smb-sales-boost agent skill (v1.9.4).
+SMB Sales Boost API client - part of the smb-sales-boost agent skill (v1.9.5).
 
 One dependency-free command (Python 3.8+ standard library only) for every
 SMB Sales Boost REST API call. It handles authentication, parameter encoding,
@@ -109,7 +109,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "1.9.4"
+__version__ = "1.9.5"
 
 API_ORIGIN = "https://smbsalesboost.com"
 API_PREFIX = "/api/v1"
