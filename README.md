@@ -6,6 +6,14 @@ Find and export growing local businesses with plain-language requests. This skil
 
 Ask things like "find med spas in Florida with a buying signal this week", "export 500 dental practices in Texas, spend at most 300 credits" or "get the contact details for these 200 websites", and the agent turns them into the right API calls.
 
+## What's new in version 2.1.0 (October 2026)
+
+- **Integrations through the API:** the agent can now list, create and manage CRM and webhook integrations (HubSpot, Salesforce, Pipedrive, Zapier, n8n, Make, Pipedream, Clay and any webhook URL), send a test event, push a lead, read the delivery log and set up CRM field mappings. Integrations send lead data, including business contact details, to systems outside SMB Sales Boost, so the agent describes the destination and asks for your approval first, and every call that sets one up or sends data through it needs `--confirm`.
+- **Owner safeguards:** the dashboard shows which API key created or last re-pointed each integration (pausing it, or resuming it in the dashboard, keeps that label). When an API key creates a webhook integration, connects a CRM, changes where an integration sends data, adds events or re-enables one, the account owner is emailed for each change; during bursts of more than 10 changes in an hour, further changes are combined into summary emails. When you revoke an API key you can also pause every integration that key set up, and a CRM connect link the key asked for stops working.
+- **Credit caps enforced by the script:** `GET /leads` and `POST /leads/export` without `maxCredits` now need `--confirm`, and a `maxCredits` of `null`, a negative number, a decimal, `true`/`false` or text is refused before anything is sent (previously a `null` cap on an export was silently removed). On `GET /leads`, `limit` must be one whole number from 1 to 1000 (the API reads `0` as a page of 100, so the script refuses it).
+- **No automatic retries for integration changes:** a `429` or `503` on a call that creates, changes or sends through an integration is returned with advice (check `GET /integrations` or the delivery log first) instead of being repeated by the script.
+- Clearer advice after a timeout (for example, check `GET /integrations` before creating a webhook again: the same URL returns `409 integration_exists`, a changed URL creates a second integration with its own signing secret, and a lost secret means delete and create again), a `--help` list of every call that needs `--confirm`, and the skill metadata now declares `python3` and the homepage.
+
 ## What's new in version 2.0.0 (October 2026)
 
 - Updated for the current API: buying-signal names and filters (`lastBuyingSignalFrom`, `buyingSignalTypeFilter`, "Last Buying Signal" and "Buying Signal Type"), the current lead fields (Total Phones, Tier 1-6 emails, founders, software, ad pixels, ratings and more) and dozens of new filters.
@@ -51,7 +59,7 @@ Set the API key as an environment variable before starting your agent:
 export SMB_SALES_BOOST_API_KEY="smbk_your_key_here"
 ```
 
-For OpenClaw, the skill declares `SMB_SALES_BOOST_API_KEY` as its required variable (`metadata.openclaw.requires.env` and `primaryEnv` in `SKILL.md`). You can configure it in `~/.openclaw/openclaw.json`:
+For OpenClaw, the skill declares `SMB_SALES_BOOST_API_KEY` as its required variable (`metadata.openclaw.requires.env` and `primaryEnv` in `SKILL.md`) and `python3` as its required program (`requires.bins`). You can configure it in `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -84,6 +92,7 @@ Never paste your API key into a chat, a shared document or version control.
 - **Enrich websites:** "Get the phone numbers and emails for these 200 websites"
 - **Automate:** "Email new HVAC leads in Ohio to my team every day", "Split leads evenly among my reps"
 - **Keywords and categories:** "What kinds of businesses should I target?", "Turn on auto-refine for my keyword list"
+- **Integrations:** "Send every new lead to my Zapier webhook", "Connect my HubSpot", "Are my integrations working?", "Pause the Make integration"
 - **Account:** "How many credits do I have?", "Buy 1,000 more credits", "Upgrade to Growth", "Set up auto top-up", "Cancel my subscription"
 - **Sign up:** "I want to start a Starter trial"
 
@@ -107,8 +116,9 @@ Never paste your API key into a chat, a shared document or version control.
 
 - **Your approval for anything that costs money.** The agent must ask before buying credits, changing plans, starting a subscription checkout, turning on automatic charges (auto top-up, overage budget) or starting an enrichment. The client script refuses these calls unless the agent adds `--confirm`, which the instructions allow only after you approve.
 - **Your approval before emailing anyone or deleting anything.** Email schedules are created paused for your review; sending, cancelling, deleting and keyword regeneration also need `--confirm`.
-- **Credit caps.** The agent previews first for free and sets a credit limit on every search and export.
-- **Safe retries.** Only rate-limit and temporary-unavailability errors are retried automatically. A request that may have charged is never repeated blindly; the script explains how to check first.
+- **Your approval before lead data leaves SMB Sales Boost.** Creating a webhook integration, connecting a CRM, pointing an integration at a new destination, re-enabling it, changing the header API key it sends, pushing a lead, sending a test event, retrying a delivery and changing or testing a CRM field mapping all need `--confirm`, after the agent has told you where the data goes. When an API key creates or re-points an integration, the account owner is emailed for each change; during bursts of more than 10 changes in an hour, further changes are combined into summary emails. The webhook signing secret is shown once and the script never saves it to a file.
+- **Credit caps.** The agent previews first for free and sets a credit limit on every search and export. The script refuses an uncapped search or export unless you approved it, and refuses a cap that the API would ignore.
+- **Safe retries.** Only rate-limit and temporary-unavailability errors are retried automatically, and never on a call that creates, changes or sends through an integration. A request that may have charged or sent data is never repeated blindly; the script explains how to check first.
 
 ## Security
 
@@ -130,7 +140,7 @@ sha256sum SKILL.md REFERENCE.md README.md smb_api.py openapi.json
 
 - **MCP server:** a remote Model Context Protocol server at `https://smbsalesboost.com/mcp` (Bearer API key). Details: [server card](https://smbsalesboost.com/.well-known/mcp/server-card.json).
 - **API documentation:** [https://smbsalesboost.com/docs/api](https://smbsalesboost.com/docs/api) and the [OpenAPI specification](https://smbsalesboost.com/openapi.json).
-- **Dashboard-only features:** CRM and webhook integrations, API key management, billing details and undoing a cancellation.
+- **Dashboard-only features:** API key management (including pausing the integrations a key set up when you revoke it), billing details and undoing a cancellation.
 
 ## Data accuracy
 

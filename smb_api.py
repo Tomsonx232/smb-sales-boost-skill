@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SMB Sales Boost API client - part of the smb-sales-boost agent skill (v2.0.0).
+SMB Sales Boost API client - part of the smb-sales-boost agent skill (v2.1.0).
 
 One dependency-free command (Python 3.8+ standard library only) for every
 SMB Sales Boost REST API call. It handles authentication, parameter encoding,
@@ -26,9 +26,15 @@ Options
   --params-file PATH   read the query parameters from a JSON file ("-" = stdin)
   --body JSON          request body as a JSON object (POST, PATCH, PUT)
   --body-file PATH     read the request body from a JSON file ("-" = stdin)
-  --confirm            required for calls that charge money, send email, spend
-                       credits on enrichment or delete data. Add it only after
-                       the user has explicitly approved that exact action.
+  --confirm            required for calls that charge money or authorize future
+                       charges, send email, spend credits on enrichment, search
+                       or export leads without a maxCredits cap, send lead data
+                       to an outside destination (creating, connecting,
+                       re-pointing, re-enabling, testing or pushing to an
+                       integration, retrying a delivery, changing or testing a
+                       CRM field mapping), cancel the subscription or delete
+                       data. Add it only after the user has explicitly
+                       approved that exact action.
   --dry-run            print the request that would be sent, then exit
   --output-dir DIR     folder for downloaded and exported files (default:
                        $SMB_SALES_BOOST_OUTPUT_DIR, else /mnt/user-data/outputs
@@ -40,7 +46,9 @@ Options
                        call that timed out; Stripe does not charge the same key
                        twice for about 24 hours
   --timeout SEC        network timeout in seconds (default 180)
-  --no-retry           do not retry after 429 or 503 responses
+  --no-retry           do not retry after 429 or 503 responses (calls that
+                       change or send through an integration are never
+                       retried automatically)
   --no-fetch           for download-link endpoints, print the link instead of
                        downloading the file
 
@@ -52,6 +60,34 @@ Examples
   python3 smb_api.py POST /leads/export --body '{"filters":{"positiveKeywords":["*med*spa*"],"stateInclude":["FL"]},"maxCredits":100}'
   python3 smb_api.py GET /export-history/412/download
   python3 smb_api.py POST /purchase-credits --body '{"creditCount":500}' --confirm
+  python3 smb_api.py GET /integrations
+  python3 smb_api.py POST /integrations/webhook --body-file hook.json --confirm
+
+Credit caps
+  GET /leads (query) and POST /leads/export (body) should always carry
+  maxCredits, a whole number of 0 or more (0 returns only leads you already
+  have, free). Without it the call needs --confirm, because it can spend up to
+  the page limit (GET /leads) or the whole balance (export). A maxCredits of
+  null, a negative number, a decimal, a boolean or text is refused before
+  anything is sent, because the API would treat it as "no cap". On GET /leads
+  a limit, when given, must be a whole number from 1 to 1000, given once (the
+  API reads 0 or a bad value as 100, and the page limit is the most one call
+  can spend).
+
+Integrations
+  Integrations send lead data (business contact details) to outside systems
+  (CRMs, Zapier, n8n, Make, Pipedream, Clay, any webhook URL) and keep doing so
+  automatically. Reading them (GET) needs no confirmation; every call that
+  creates, connects, re-points, re-enables, tests or pushes, or changes the
+  header apiKey sent to the destination, needs --confirm. The signingSecret
+  returned when a webhook integration is created is shown only once: hand it
+  to the user and do not log or save it.
+
+Retries
+  A 429 or 503 with a Retry-After of 60 seconds or less is retried (up to 3
+  attempts), except for calls that change or send through an integration
+  (anything but GET under /integrations): those return the error with advice,
+  so the agent checks GET /integrations or the delivery log before repeating.
 
 Exit codes
   0 success, 1 API error (or an unexpected client error), 2 usage error or
@@ -73,13 +109,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 API_ORIGIN = "https://smbsalesboost.com"
 API_PREFIX = "/api/v1"
 USER_AGENT = "smb-sales-boost-skill/%s (+https://github.com/Tomsonx232/smb-sales-boost-skill)" % __version__
 
-ENV_API_KEY = "SMB_SALES_BOOST_API_KEY"
+KEY_ENV_VAR_NAME = "SMB_SALES_BOOST_API_KEY"
 ENV_OUTPUT_DIR = "SMB_SALES_BOOST_OUTPUT_DIR"
 SANDBOX_OUTPUT_DIR = "/mnt/user-data/outputs"
 FALLBACK_OUTPUT_DIR = "smb-sales-boost-files"
@@ -137,6 +173,17 @@ TRIGGER_RE = re.compile(r"/email-schedules/\d+/trigger")
 SCHEDULE_RECIPIENT_KEYS = ("recipients", "fullCopyRecipients", "combinedRecipients", "combinedFileEnabled")
 SCHEDULE_SEARCH_KEYS = ("filterPresetId", "maxLeadsPerEmail")
 SCHEDULE_RE = re.compile(r"/email-schedules/\d+")
+# Integrations (paths are already lower case when these are matched).
+INTEGRATION_ID_RE = re.compile(r"/integrations/[^/]+")
+INTEGRATION_CONNECT_RE = re.compile(r"/integrations/[^/]+/connect")
+INTEGRATION_SEND_RE = re.compile(r"/integrations/[^/]+/(test|push-lead)")
+INTEGRATION_RETRY_RE = re.compile(r"/integrations/[^/]+/deliveries/[^/]+/retry")
+INTEGRATION_MAPPING_RE = re.compile(r"/integrations/[^/]+/field-mapping")
+INTEGRATION_MAPPING_TEST_RE = re.compile(r"/integrations/[^/]+/field-mapping/test")
+INTEGRATION_DESTINATION_KEYS = ("subscriptions", "defaultTargetUrl", "pipedriveDeals")
+INTEGRATION_RATE_LIMITS = "60 integration requests per minute per account, 30 per minute for connect"
+LEADS_DEFAULT_LIMIT = 100
+LEADS_MAX_LIMIT = 1000
 
 
 class UsageError(Exception):
@@ -349,8 +396,116 @@ EXPORT_TOP_LEVEL_KEYS = ("maxCredits", "maxResults", "maxLeads", "excludePurchas
 EXPORT_IGNORED_FILTER_KEYS = ("search", "page", "limit")
 
 
+def checked_max_credits(value, where):
+    """Return maxCredits as a whole number of 0 or more, or raise UsageError.
+
+    The API treats null (and, on GET /leads, any non-number or negative value) as "no cap",
+    so anything that is not a plain whole number is refused instead of being sent or dropped.
+    """
+    if value is None:
+        raise UsageError(
+            "%s is null, which the API treats as no credit cap. Send a whole number of 0 or more "
+            "(0 returns only leads you already have, free), or leave it out and get the user's approval "
+            "for an uncapped spend (--confirm)." % where)
+    if isinstance(value, bool):
+        raise UsageError("%s must be a whole number of 0 or more, not a true/false value" % where)
+    if isinstance(value, int):
+        number = value
+    elif isinstance(value, float) and value.is_integer():
+        number = int(value)
+    elif isinstance(value, str) and re.fullmatch(r"\s*-?\d+\s*", value):
+        number = int(value)
+    else:
+        raise UsageError("%s must be a whole number of 0 or more (a JSON number such as 25), got %s; any "
+                         "other value can leave the call without the cap you intended" % (where, json.dumps(value)[:60]))
+    if number < 0:
+        raise UsageError("%s must be 0 or more, got %d; a negative value can leave the call without a "
+                         "credit cap" % (where, number))
+    return number
+
+
+def check_leads_max_credits(params, endpoint_query):
+    """Validate maxCredits for GET /leads, from --params or the endpoint's own query string."""
+    sources = []
+    if "maxCredits" in params:
+        sources.append("params")
+    sources.extend("endpoint" for key, _ in endpoint_query if key == "maxCredits")
+    if len(sources) > 1:
+        raise UsageError("maxCredits is given more than once; the API then ignores it and the search has "
+                         "no credit cap. Send it once, in --params.")
+    if "maxCredits" in params:
+        params["maxCredits"] = checked_max_credits(params["maxCredits"], "maxCredits")
+    for index, (key, value) in enumerate(endpoint_query):
+        if key == "maxCredits":
+            endpoint_query[index] = (key, str(checked_max_credits(value, "maxCredits")))
+
+
+def checked_leads_limit(value, where):
+    """Return a GET /leads limit as a whole number from 1 to 1000, or raise UsageError.
+
+    The API reads 0 or a non-numeric value as the default page of 100 (a negative value as 1, "5abc" as 5),
+    and the page limit is the most credits one call can spend, so only a plain whole number in range
+    is accepted instead of guessing what the server will do with it.
+    """
+    if value is None:
+        raise UsageError("%s is null; leave it out for the default page of %d, or send a whole number from 1 to "
+                         "%d" % (where, LEADS_DEFAULT_LIMIT, LEADS_MAX_LIMIT))
+    if isinstance(value, bool):
+        raise UsageError("%s must be a whole number from 1 to %d, not a true/false value" % (where, LEADS_MAX_LIMIT))
+    if isinstance(value, int):
+        number = value
+    elif isinstance(value, float) and value.is_integer():
+        number = int(value)
+    elif isinstance(value, str) and re.fullmatch(r"\s*[+-]?\d+\s*", value):
+        number = int(value)
+    else:
+        raise UsageError("%s must be a whole number from 1 to %d (a JSON number such as 25), got %s; the API "
+                         "would read another value as a different page size" % (where, LEADS_MAX_LIMIT,
+                                                                                 json.dumps(value)[:60]))
+    if number == 0:
+        raise UsageError("%s 0 is treated as %d by the API, so this page could spend up to %d credits. Send a "
+                         "whole number from 1 to %d, or use GET /leads/preview (free) for counts"
+                         % (where, LEADS_DEFAULT_LIMIT, LEADS_DEFAULT_LIMIT, LEADS_MAX_LIMIT))
+    if number < 0:
+        raise UsageError("%s must be a whole number from 1 to %d, got %d" % (where, LEADS_MAX_LIMIT, number))
+    if number > LEADS_MAX_LIMIT:
+        raise UsageError("%s must be at most %d (the API cuts larger values to %d), got %d"
+                         % (where, LEADS_MAX_LIMIT, LEADS_MAX_LIMIT, number))
+    return number
+
+
+def check_leads_limit(params, endpoint_query):
+    """Validate limit for GET /leads, from --params or the endpoint's own query string."""
+    count = (1 if "limit" in params else 0) + sum(1 for key, _ in endpoint_query if key == "limit")
+    if count > 1:
+        raise UsageError("limit is given more than once; the API then reads the first value and the page can "
+                         "be larger than intended. Send it once, in --params.")
+    if "limit" in params:
+        params["limit"] = checked_leads_limit(params["limit"], "limit")
+    for index, (key, value) in enumerate(endpoint_query):
+        if key == "limit":
+            endpoint_query[index] = (key, str(checked_leads_limit(value, "limit")))
+
+
+def _page_limit(value):
+    """The most leads (and so credits) one GET /leads page can return, as the server clamps it.
+
+    check_leads_limit has already refused anything outside 1-1000; below 1 falls back to the
+    server default as a second line of defense.
+    """
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return LEADS_DEFAULT_LIMIT
+    if number < 1:
+        return LEADS_DEFAULT_LIMIT
+    return min(number, LEADS_MAX_LIMIT)
+
+
 def normalize_export_body(body, notes):
     """Fix the input mistakes that would otherwise be silently ignored by POST /leads/export."""
+    if "maxCredits" in body and body["maxCredits"] is None:
+        checked_max_credits(None, "maxCredits")
     filters = body.get("filters")
     if isinstance(filters, dict):
         for key in EXPORT_TOP_LEVEL_KEYS:
@@ -366,9 +521,6 @@ def normalize_export_body(body, notes):
                 "POST /leads/export ignores filters.%s, so this export would match and charge for more "
                 "leads than intended. Remove it: use maxResults to limit the number of leads and keyword or "
                 "include-term filters to narrow the match." % ", filters.".join(ignored))
-    if "maxCredits" in body and body["maxCredits"] is None:
-        del body["maxCredits"]
-        notes.append("removed \"maxCredits\": null (the export treats it as no cap)")
     ids = body.get("selectedIds")
     if isinstance(ids, (str, int)) and not isinstance(ids, bool):
         parts = _as_list(ids) if isinstance(ids, str) else [ids]
@@ -383,6 +535,8 @@ def normalize_export_body(body, notes):
         if isinstance(value, str) and re.fullmatch(r"\s*\d+\s*", value):
             body[key] = int(value)
             notes.append("%s: converted the string %r to a number" % (key, value))
+    if "maxCredits" in body:
+        body["maxCredits"] = checked_max_credits(body["maxCredits"], "maxCredits")
     for key in EXPORT_BOOL_KEYS:
         value = body.get(key)
         if isinstance(value, str) and value.strip().lower() in ("true", "false", "1", "0"):
@@ -398,10 +552,42 @@ def normalize_export_body(body, notes):
 # Safety rules
 # --------------------------------------------------------------------------
 
-def confirmation_reason(method, path, body):
-    """Why this call needs --confirm, or None when it does not."""
+OUTSIDE_DESTINATION = ("lead data (business contact details) leaves SMB Sales Boost for an outside "
+                       "destination")
+
+
+def integration_patch_changes(body):
+    """The parts of a PATCH /integrations/{id} body that change where or whether lead data is sent."""
+    changes = [key for key in INTEGRATION_DESTINATION_KEYS if key in body]
+    status = body.get("status")
+    if isinstance(status, str) and status.strip().lower() == "connected":
+        changes.append("status \"connected\"")
+    if "apiKey" in body:
+        changes.append("apiKey, the secret sent to the destination as X-SMB-API-Key")
+    return changes
+
+
+def confirmation_reason(method, path, body, query=None):
+    """Why this call needs --confirm, or None when it does not.
+
+    path is already lower case (normalize_endpoint), so mixed-case paths cannot slip past these checks.
+    query is a dict of the query parameters that will be sent.
+    """
     body = body if isinstance(body, dict) else {}
+    query = query if isinstance(query, dict) else {}
+    if method == "GET" and path == "/leads" and "maxCredits" not in query:
+        most = _page_limit(query.get("limit", LEADS_DEFAULT_LIMIT))
+        return ("it has no maxCredits, so it can spend up to %d credits (1 per new lead on the page; the page "
+                "limit is %d). Pass maxCredits to cap it (0 returns only "
+                "leads you already have, free)" % (most, most))
     if method == "DELETE":
+        if INTEGRATION_MAPPING_RE.fullmatch(path):
+            return ("it resets the CRM field mapping to the defaults, which changes which lead fields are "
+                    "written to the connected CRM on every future delivery")
+        if INTEGRATION_ID_RE.fullmatch(path):
+            return ("it permanently deletes the integration with its event subscriptions and delivery log; "
+                    "lead data stops going to that destination, and a webhook's signing secret cannot be "
+                    "recovered (a new integration gets a new one)")
         if path.startswith("/filter-presets/"):
             return "it permanently deletes the preset AND every email schedule that uses it"
         if path.startswith("/email-schedules/"):
@@ -427,8 +613,46 @@ def confirmation_reason(method, path, body):
             return ("it creates an ACTIVE schedule that emails real recipients within about 15 minutes "
                     "and spends credits (create it with \"isActive\": false to review it first)")
         if path == "/enrichments":
+            if "maxCredits" not in body:
+                return ("it spends credits (1 per new database match, 0.1 per live fetch), cannot be undone, "
+                        "and has no maxCredits, so it can spend up to your whole credit balance")
             return "it spends credits (1 per new database match, 0.1 per live fetch) and cannot be undone"
+        if EXPORT_RE.fullmatch(path) and "maxCredits" not in body:
+            return ("it has no maxCredits, so it can spend up to your whole credit balance plus any overage "
+                    "budget (1 credit per new lead). Add a top-level maxCredits to cap it (0 exports only "
+                    "leads you already have, free)")
+        if path == "/integrations/webhook":
+            return ("it creates an integration that sends lead data (business contact details) to an outside "
+                    "URL automatically on every subscribed event until it is disabled or deleted; the account "
+                    "owner is emailed about it, and the response shows the signing secret only once")
+        if INTEGRATION_CONNECT_RE.fullmatch(path):
+            return ("it starts connecting a CRM: once the user opens the returned link and approves, lead "
+                    "data (business contact details) is sent to that CRM automatically on every subscribed "
+                    "event, and the account owner is emailed about it")
+        if INTEGRATION_RETRY_RE.fullmatch(path):
+            return "it sends that delivery again right now, so %s" % OUTSIDE_DESTINATION
+        if INTEGRATION_MAPPING_TEST_RE.fullmatch(path):
+            return ("it creates and then deletes test records in the connected CRM, an outside system "
+                    "(a dry run of the field mapping)")
+        send = INTEGRATION_SEND_RE.fullmatch(path)
+        if send and send.group(1) == "test":
+            return ("it sends a test event to the integration's real destination right now, an outside "
+                    "system (for a CRM it creates a real test record that is not removed)")
+        if send:
+            return ("it sends one lead right now, so %s; a leadId you have not received before costs "
+                    "1 credit and also goes to your other integrations subscribed to lead.created"
+                    % OUTSIDE_DESTINATION)
     if method == "PATCH":
+        if INTEGRATION_MAPPING_RE.fullmatch(path):
+            return ("it changes which lead fields are written to the connected CRM, an outside system, on "
+                    "every future delivery")
+        if INTEGRATION_ID_RE.fullmatch(path):
+            changes = integration_patch_changes(body)
+            if changes:
+                return ("it changes where, what or whether the integration sends (%s): %s automatically on "
+                        "every subscribed event, and the account owner is emailed when the destination "
+                        "changes, events are added or the integration is re-enabled"
+                        % ("; ".join(changes), OUTSIDE_DESTINATION))
         if path == "/overage-budget" and body.get("enabled") is True:
             return ("it authorizes automatic daily charges to the card on file, and it restarts email schedules "
                     "paused for insufficient credits (their leads can then be billed as overage)")
@@ -488,14 +712,65 @@ ADVICE_AFTER_FAILURE = {
         "the checkout link was opened."),
     ("POST", "/lead-export-history/refresh-and-export"): (
         "The snapshots may already have been refreshed. Retrying is free."),
+    ("POST", "/integrations/webhook"): (
+        "The integration may have been created. Check GET /integrations before trying again. Repeating "
+        "the same provider and targetUrl returns 409 integration_exists; a different provider or a changed "
+        "URL (even a trailing slash) creates a second integration that sends the same lead data again, with "
+        "its own signing secret. The signing secret cannot be shown again, so if the integration exists but "
+        "the user did not get its signingSecret, delete it (DELETE /integrations/{id}) and create it again."),
 }
+
+
+def is_integration_change(method, path):
+    """Calls under /integrations that change something or send data (everything except GET)."""
+    return method != "GET" and (path == "/integrations" or path.startswith("/integrations/"))
 
 
 def failure_advice(method, path):
     if method == "POST" and TRIGGER_RE.fullmatch(path):
         return ("The schedule may already have emailed its recipients and charged credits. Check "
                 "GET /email-schedules (lastSent and totalSentCount) before triggering it again.")
+    send = INTEGRATION_SEND_RE.fullmatch(path) if method == "POST" else None
+    if send and send.group(1) == "push-lead":
+        return ("The lead may already have been sent to the destination (and 1 credit charged for a new "
+                "lead). Check GET /integrations/{id}/deliveries (a push that was sent is recorded there, CRM "
+                "pushes included; one refused before sending is not, and one still in progress can take a "
+                "minute to appear), for a CRM the record in the "
+                "CRM itself, and GET /me before pushing it again. A repeat can create a duplicate record in a "
+                "CRM.")
+    if (send and send.group(1) == "test") or (method == "POST" and INTEGRATION_RETRY_RE.fullmatch(path)):
+        return ("The event may already have been delivered (for a CRM, a test record may exist). Check "
+                "GET /integrations/{id}/deliveries before sending it again.")
+    if method == "POST" and INTEGRATION_CONNECT_RE.fullmatch(path):
+        return ("Nothing is connected until the user opens the link and approves, so asking for a new link "
+                "is safe. Check GET /integrations first if the user may already have approved one.")
+    if method == "PATCH" and (INTEGRATION_ID_RE.fullmatch(path) or INTEGRATION_MAPPING_RE.fullmatch(path)):
+        return ("The change may already have been saved. Check GET /integrations/{id} (or its "
+                "field-mapping) before sending it again.")
+    if method == "DELETE" and (INTEGRATION_ID_RE.fullmatch(path) or INTEGRATION_MAPPING_RE.fullmatch(path)):
+        return ("The delete may already have happened. Check GET /integrations before sending it again.")
     return ADVICE_AFTER_FAILURE.get((method, path))
+
+
+def integration_no_retry_advice(method, path, status, data):
+    """Advice for a 429 or 503 on an integration call, which the script never retries by itself."""
+    code = data.get("error") if isinstance(data, dict) else None
+    if status == 503 and code == "provider_unavailable":
+        return ("This provider is not available on this deployment yet. Do not retry; tell the user and check "
+                "GET /integrations/providers.")
+    check = "GET /integrations"
+    if INTEGRATION_SEND_RE.fullmatch(path) or INTEGRATION_RETRY_RE.fullmatch(path):
+        check = "GET /integrations/{id}/deliveries"
+    if status == 429:
+        return ("Rate limited (%s, shared by the dashboard, the API and MCP). This call was not retried "
+                "automatically because it changes or sends through an integration. Wait for Retry-After, then "
+                "check %s to confirm an earlier attempt did not already go through before sending it once more."
+                % (INTEGRATION_RATE_LIMITS, check))
+    specific = failure_advice(method, path)
+    general = ("This call was not retried automatically because it changes or sends through an integration. "
+               "Check %s first; repeat it after Retry-After only if the change or delivery is not there."
+               % check)
+    return general if not specific else specific + " " + general
 
 
 # --------------------------------------------------------------------------
@@ -513,7 +788,11 @@ def _retry_after_seconds(headers):
 
 
 def perform(build, timeout, allow_retry):
-    """Send a request built by build(); retry only 429 and 503, which never have side effects."""
+    """Send a request built by build(); retry only 429 and 503 with a short Retry-After.
+
+    The caller passes allow_retry=False for calls that change or send through an integration: on
+    those a 503 may come after part of the work was done, so the error is returned with advice instead.
+    """
     attempt = 0
     while True:
         attempt += 1
@@ -889,7 +1168,9 @@ def handle_response(ctx, status, response):
             result["message"] = ("The request timed out at the network edge (HTTP %d). The server may "
                                  "still be working on it." % status)
         advice = failure_advice(ctx.method, ctx.path)
-        if advice and status >= 500:
+        if is_integration_change(ctx.method, ctx.path) and status in (429, 503):
+            result["advice"] = integration_no_retry_advice(ctx.method, ctx.path, status, None)
+        elif advice and status >= 500:
             result["advice"] = advice
         emit(result)
         return 1
@@ -905,7 +1186,9 @@ def handle_response(ctx, status, response):
             result["message"] = ("The server answered with a redirect. This client never follows "
                                  "redirects, so the API key is not sent anywhere else.")
         advice = failure_advice(ctx.method, ctx.path)
-        if advice and status >= 500:
+        if is_integration_change(ctx.method, ctx.path) and status in (429, 503):
+            result["advice"] = integration_no_retry_advice(ctx.method, ctx.path, status, data)
+        elif advice and status >= 500:
             result["advice"] = advice
         emit(result)
         return 1
@@ -927,7 +1210,13 @@ def handle_response(ctx, status, response):
              "positiveKeywords (or nameIncludeTerms, urlIncludeTerms, crawledUrlIncludeTerms or "
              "descriptionIncludeTerms).")
     emit(compact_view(data) if ctx.args.compact else data)
-    if ctx.args.out:
+    holds_secret = ctx.method == "POST" and ctx.path == "/integrations/webhook"
+    if holds_secret:
+        note("the signingSecret above is shown only this once: give it to the user to verify the "
+             "X-SMB-Signature header, and do not log it, save it or repeat it elsewhere")
+    if ctx.args.out and holds_secret:
+        note("--out was ignored: this response holds the one-time signing secret, so it is not saved to a file")
+    elif ctx.args.out:
         save_json_copy(ctx, data)
     return 0
 
@@ -946,18 +1235,46 @@ def _timeout_seconds(text):
     return value
 
 
+CONFIRM_HELP = """\
+--confirm is required (nothing is sent without it) for:
+  money:        POST /purchase, POST /purchase-credits, POST /subscription/change-plan,
+                PATCH /auto-top-up or /overage-budget with "enabled": true
+  credits:      GET /leads and POST /leads/export without maxCredits, POST /enrichments
+  email:        POST /email-schedules/{id}/trigger, creating or activating a schedule, changing
+                the recipients, preset or maxLeadsPerEmail of a schedule that is not paused
+  lead data to an outside destination (integrations):
+                POST /integrations/webhook, POST /integrations/{provider}/connect,
+                PATCH /integrations/{id} with subscriptions, defaultTargetUrl, pipedriveDeals,
+                apiKey or "status": "connected", POST /integrations/{id}/test, /push-lead,
+                /deliveries/{deliveryId}/retry and /field-mapping/test,
+                PATCH /integrations/{id}/field-mapping
+  other:        POST /subscription/cancel, POST /ai/generate-keywords, every DELETE
+
+maxCredits must be a whole number of 0 or more; null, negative, decimal, true/false or text
+values are refused before anything is sent. On GET /leads, limit must be a whole number from
+1 to 1000, given once.
+
+429 and 503 responses are retried automatically (Retry-After up to 60 s), except on calls that
+change or send through an integration (anything but GET under /integrations): those return the
+error with advice to check GET /integrations or the delivery log first.
+"""
+
+
 def parse_args(argv):
     parser = argparse.ArgumentParser(
         prog="smb_api.py",
         description="SMB Sales Boost API client (skill version %s). See the module docstring for details." % __version__,
+        epilog=CONFIRM_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("positionals", nargs="+", metavar="ARG",
-                        help="METHOD ENDPOINT (an API key may come first, but prefer the %s env var)" % ENV_API_KEY)
+                        help="METHOD ENDPOINT (an API key may come first, but prefer the %s env var)" % KEY_ENV_VAR_NAME)
     parser.add_argument("--params", default=None)
     parser.add_argument("--params-file", default=None)
     parser.add_argument("--body", default=None)
     parser.add_argument("--body-file", default=None)
-    parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--confirm", action="store_true",
+                        help="approve a call that needs it (see the list below); only after the user said yes")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--out", default=None)
@@ -995,17 +1312,24 @@ def run(args):
     notes = []
     if method == "POST" and EXPORT_RE.fullmatch(path) and isinstance(body, dict):
         body = normalize_export_body(body, notes)
+    if method == "GET" and path == "/leads":
+        check_leads_max_credits(params, endpoint_query)
+        check_leads_limit(params, endpoint_query)
+    if (method in ("POST", "PATCH") and (path == "/integrations/webhook" or INTEGRATION_ID_RE.fullmatch(path))
+            and isinstance(body, dict) and body.get("apiKey") not in (None, "") and args.body is not None):
+        notes.append("the body holds apiKey (a shared secret) on the command line, where other local "
+                     "processes and shell history can see it; pass such a body with --body-file instead")
     query_pairs = endpoint_query + encode_query(params, notes)
     notes.extend(pre_send_notes(method, path, set(key for key, _ in query_pairs), body))
 
     is_public = path in PUBLIC_ENDPOINTS
     if key_arg is not None and key_arg.strip().lower() != "none":
         api_key = clean_api_key(key_arg)
-        note("the API key was passed on the command line; prefer the %s environment variable" % ENV_API_KEY)
+        note("the API key was passed on the command line; prefer the %s environment variable" % KEY_ENV_VAR_NAME)
     elif key_arg is not None:
         api_key = None
     else:
-        api_key = clean_api_key(os.environ.get(ENV_API_KEY))
+        api_key = clean_api_key(os.environ.get(KEY_ENV_VAR_NAME))
     if is_public:
         api_key = None
     if api_key and not api_key.startswith("smbk_"):
@@ -1024,7 +1348,7 @@ def run(args):
         if isinstance(body, dict):
             body["idempotencyKey"] = idempotency_key  # the server prefers the body value; keep them identical
 
-    reason = confirmation_reason(method, path, body)
+    reason = confirmation_reason(method, path, body, dict(query_pairs))
     url, build = api_request_builder(method, path, query_pairs, api_key, body, extra_headers)
 
     for message in notes:
@@ -1052,7 +1376,7 @@ def run(args):
         return 2
 
     if not api_key and not is_public:
-        raise UsageError("no API key: set the %s environment variable (keys start with smbk_)" % ENV_API_KEY)
+        raise UsageError("no API key: set the %s environment variable (keys start with smbk_)" % KEY_ENV_VAR_NAME)
 
     if idempotency_key:
         note("Idempotency-Key: %s (if this call times out, retry within 24 hours with --idempotency-key %s "
@@ -1062,7 +1386,8 @@ def run(args):
     if writes_files(args, method, path):
         ctx.output_dir.path()  # create the folder now, so a folder problem stops us before anything is charged
     try:
-        status, response = perform(build, args.timeout, not args.no_retry)
+        allow_retry = not args.no_retry and not is_integration_change(method, path)
+        status, response = perform(build, args.timeout, allow_retry)
     except NetworkError as exc:
         return report_network_failure(method, path, idempotency_key, "The request did not complete: %s." % exc)
     try:
@@ -1095,8 +1420,8 @@ def writes_files(args, method, path):
 DEFAULT_FAILURE_ADVICE = (
     "The request may still have reached the server. A GET is safe to repeat. Before repeating anything "
     "else, check the current state with the matching GET (for example GET /email-schedules, "
-    "GET /filter-presets, GET /keyword-lists or GET /export-formats), because repeating a create can "
-    "make a duplicate.")
+    "GET /filter-presets, GET /keyword-lists, GET /export-formats or GET /integrations), because repeating "
+    "a create can make a duplicate.")
 
 
 def report_network_failure(method, path, idempotency_key, message):

@@ -3,7 +3,7 @@
   "info": {
     "title": "SMB Sales Boost API",
     "version": "1.0.0",
-    "description": "REST API for SMB Sales Boost - a B2B lead generation platform that helps you find growing local businesses to reach out to: small and medium businesses across the United States showing growth signals such as new websites, new social profiles and fresh online activity (newly registered businesses are one subset). Search, filter, and export leads with comprehensive company data including contact information, location, and AI-enriched categories. API access requires a Starter, Growth, Scale, Platinum, or Enterprise subscription plan, including during the 14-day free trial. New users can purchase a subscription (or start a free trial) entirely via API with POST /purchase (no web signup required); the API key is emailed after checkout. A Model Context Protocol (MCP) server is also available at https://smbsalesboost.com/mcp for AI assistant integration - see https://smbsalesboost.com/docs/api/mcp-server for details. Every operation that uses an API key can also return 401 unauthorized (missing, invalid or revoked key), 403 forbidden (no active or trialing paid subscription), 429 (more than 600 requests per minute per key) and 503 service_unavailable (temporary; retry after the Retry-After delay).",
+    "description": "REST API for SMB Sales Boost - a B2B lead generation platform that helps you find growing local businesses to reach out to: small and medium businesses across the United States showing growth signals such as new websites, new social profiles and fresh online activity (newly registered businesses are one subset). Search, filter, and export leads with comprehensive company data including contact information, location, and AI-enriched categories. API access requires a Starter, Growth, Scale, Platinum, or Enterprise subscription plan, including during the 14-day free trial. New users can purchase a subscription (or start a free trial) entirely via API with POST /purchase (no web signup required); the API key is emailed after checkout. A Model Context Protocol (MCP) server is also available at https://smbsalesboost.com/mcp for AI assistant integration - see https://smbsalesboost.com/docs/api/mcp-server for details. Every operation that uses an API key can also return 401 unauthorized (missing, invalid or revoked key), 403 forbidden (no active or trialing paid subscription), 429 (more than 600 requests per minute per key) and 503 service_unavailable (temporary; retry after the Retry-After delay). Integration endpoints (/integrations*) also share one budget per account of 60 requests per minute (connect: 30 per minute), and can return 503 provider_unavailable, which is not temporary (no Retry-After; do not retry).",
     "contact": {
       "name": "SMB Sales Boost Support",
       "email": "support@smbsalesboost.com",
@@ -80,7 +80,7 @@
     },
     {
       "name": "Integrations",
-      "description": "Connect SMB Sales Boost to HubSpot, Salesforce, Pipedrive, Zapier, n8n, Make, Pipedream, Clay, or any custom webhook"
+      "description": "Send lead data to HubSpot, Salesforce, Pipedrive, Zapier, n8n, Make, Pipedream, Clay, or any custom webhook. Integrations send business contact details to outside systems automatically on every subscribed event. When an API key creates or re-points an integration, the account owner is emailed for each change. During bursts of more than 10 changes in an hour, further changes are combined into summary emails. Every integration endpoint shares one rate-limit budget per account (60 requests per minute; connect: 30 per minute)."
     },
     {
       "name": "Enrichments",
@@ -89,24 +89,13 @@
   ],
   "paths": {
     "/integrations/providers": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api",
-          "description": "Integrations endpoints are mounted directly under /api (not /api/v1)"
-        }
-      ],
       "get": {
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "listIntegrationProviders",
-        "summary": "List available integration providers",
-        "description": "Returns the integration provider catalog and runtime availability. Providers whose owner-side env vars are missing return available=false and are greyed out as Coming Soon.",
+        "summary": "List integration providers",
+        "description": "Returns the provider catalog with runtime availability. The webhook providers (Zapier, n8n, Make, Pipedream, Clay, Generic Webhook) are always available. HubSpot, Salesforce and Pipedrive are available when they are configured for this deployment; otherwise available is false and creating or connecting them returns 503 provider_unavailable.",
         "responses": {
           "200": {
             "description": "Provider catalog",
@@ -115,59 +104,10 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "providers": {
+                    "data": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "example": "hubspot"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "tagline": {
-                            "type": "string"
-                          },
-                          "description": {
-                            "type": "string"
-                          },
-                          "authMethod": {
-                            "type": "string",
-                            "enum": [
-                              "oauth2",
-                              "webhook",
-                              "api_key_webhook"
-                            ]
-                          },
-                          "ownerSetupRequired": {
-                            "type": "boolean"
-                          },
-                          "available": {
-                            "type": "boolean"
-                          },
-                          "reason": {
-                            "type": "string",
-                            "nullable": true
-                          },
-                          "defaultEvents": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "brandColor": {
-                            "type": "string"
-                          },
-                          "helpText": {
-                            "type": "string"
-                          },
-                          "setupHelpUrl": {
-                            "type": "string",
-                            "nullable": true
-                          }
-                        }
+                        "$ref": "#/components/schemas/IntegrationProvider"
                       }
                     }
                   }
@@ -180,36 +120,67 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
     },
     "/integrations": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
       "get": {
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "listIntegrations",
-        "summary": "List the caller's integrations",
+        "summary": "List your integrations",
+        "description": "Returns every integration on your account, newest first, with its event subscriptions and who created or last changed it.",
         "responses": {
           "200": {
-            "description": "Integrations list",
+            "description": "Your integrations",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "integrations": {
+                    "data": {
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/Integration"
@@ -225,28 +196,68 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
     },
     "/integrations/webhook": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
       "post": {
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "createWebhookIntegration",
         "summary": "Create a webhook integration",
-        "description": "Creates a new webhook destination and returns a one-time signing secret. The secret is shown only once and is used to verify the X-SMB-Signature header on every event. Available for the webhook providers: zapier, n8n, make, pipedream, clay, generic_webhook.",
+        "description": "Creates a webhook destination for one of the webhook providers (zapier, n8n, make, pipedream, clay, generic_webhook). From then on SMB Sales Boost sends lead data (business contact details) to targetUrl on every subscribed event, automatically, until the integration is disabled or deleted. Confirm the destination with the account owner first. The response includes signingSecret, used to verify the X-SMB-Signature header on every delivery; it is shown only once, so hand it to the user and do not log it. If the request times out, the integration may have been created: check GET /integrations first. Repeating the same provider and targetUrl returns 409 integration_exists; a different provider or a changed URL (even a trailing slash) creates a second integration with its own secret. The signing secret cannot be shown again, so if the integration exists but you did not get its signingSecret, delete it (DELETE /integrations/{id}) and create it again. The integration and its subscriptions are written together (all or nothing), and once it is written the response always carries the signingSecret; a 503 service_unavailable means nothing was created. Limits: targetUrl must be a public https URL; at most 25 integrations per account. Safeguard: when an API key (REST or MCP) creates a webhook, connects a CRM, changes where an integration sends data, adds or re-activates an event, or re-enables an integration, SMB Sales Boost records the key on the integration (createdVia / lastChangedVia, shown in the dashboard as 'Created via API key smbk_...') and emails the account owner. The account owner is emailed for each change. During bursts of more than 10 changes in an hour, further changes are combined into summary emails.",
         "requestBody": {
           "required": true,
           "content": {
@@ -270,19 +281,15 @@
                       "generic_webhook"
                     ]
                   },
-                  "displayName": {
-                    "type": "string"
-                  },
                   "targetUrl": {
                     "type": "string",
-                    "format": "uri"
-                  },
-                  "apiKey": {
-                    "type": "string",
-                    "description": "Optional shared-secret header value"
+                    "format": "uri",
+                    "maxLength": 2048,
+                    "description": "Public https URL that receives the signed JSON POSTs"
                   },
                   "events": {
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                       "type": "string",
                       "enum": [
@@ -293,7 +300,17 @@
                         "credit.low_balance"
                       ]
                     },
-                    "minItems": 1
+                    "description": "Events to send (duplicates are ignored)"
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "apiKey": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Optional shared secret sent as the X-SMB-API-Key header on every delivery (for example a Clay table key). Stored encrypted, never returned, and only sent to the active destination URLs it is bound to, never to a different host. It is bound to targetUrl when the integration is created; an edit in the dashboard binds it again to the integration's active destinations on the same origin. A URL on a switched-off (inactive) subscription is never bound, so switching that subscription on later does not send the key there until the owner edits the integration in the dashboard or apiKey is sent again. When an API key (REST or MCP) later points the integration at any new destination URL (even on the same host, since services like Zapier, Make and Clay put every customer's hooks on one host), that request must send apiKey again (a new value, or null to stop sending it)."
                   }
                 }
               }
@@ -301,19 +318,24 @@
           }
         },
         "responses": {
-          "201": {
+          "200": {
             "description": "Created",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "integration": {
-                      "$ref": "#/components/schemas/Integration"
-                    },
-                    "signingSecret": {
-                      "type": "string",
-                      "description": "One-time webhook signing secret. Save it."
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "integration": {
+                          "$ref": "#/components/schemas/Integration"
+                        },
+                        "signingSecret": {
+                          "type": "string",
+                          "description": "Webhook signing secret. Shown only once: give it to the user and do not log it."
+                        }
+                      }
                     }
                   }
                 }
@@ -321,38 +343,112 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "description": "validation_error (details lists the problems) or bad_request (the targetUrl is not a safe public https URL).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "integration_exists: you already have this provider sending to this URL (check GET /integrations), or integration_limit: the account already has 25 integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error. Check GET /integrations before repeating the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
     },
     "/integrations/{id}": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
       "get": {
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "getIntegration",
+        "summary": "Get an integration",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
+            "in": "path",
             "required": true,
+            "description": "Integration ID (from GET /integrations)",
             "schema": {
               "type": "integer"
             }
@@ -366,7 +462,7 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "integration": {
+                    "data": {
                       "$ref": "#/components/schemas/Integration"
                     }
                   }
@@ -374,8 +470,81 @@
               }
             }
           },
+          "400": {
+            "description": "bad_request: invalid id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       },
@@ -383,18 +552,15 @@
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "updateIntegration",
-        "summary": "Update display name, status, or subscriptions",
+        "summary": "Update an integration",
+        "description": "Updates the display name, status, event subscriptions, destination URL, header API key or Pipedrive deal settings. Sending subscriptions replaces the whole subscription set. A webhook subscription sent without targetUrl uses defaultTargetUrl when it is sent; otherwise it keeps that event's current URL, or takes the integration's first URL for a new event. defaultTargetUrl sent without subscriptions re-points every existing subscription (inactive ones too). Set status to disabled to pause all sending, or to connected to resume it (from disabled or needs_attention; this counts as re-enabling). needs_attention is set only by SMB Sales Boost: sending it returns 400 validation_error (unless the integration is already needs_attention, which is a no-op). Every URL must be a public https URL. If the integration sends a header API key (X-SMB-API-Key) and the request points any subscription at a destination URL the integration did not already use (any new URL, even on the same host, since services like Zapier, Make and Clay put every customer's hooks on one host), send apiKey in the same request (a new value, or null to stop sending it); otherwise the request is rejected with 400 and nothing changes. apiKey itself applies only to Clay integrations and to webhook integrations that already send a header API key (400 bad_request otherwise, and on a CRM); null or an empty string stops sending it. Changing a destination (any new targetUrl, on an active or inactive subscription), adding or re-activating an event, or re-enabling the integration changes where lead data goes, so confirm it with the account owner first. Safeguard: when an API key (REST or MCP) creates a webhook, connects a CRM, changes where an integration sends data, adds or re-activates an event, or re-enables an integration, SMB Sales Boost records the key on the integration (createdVia / lastChangedVia, shown in the dashboard as 'Created via API key smbk_...') and emails the account owner. A dashboard change replaces that record only when it adds a destination URL the integration never had; pausing an integration (also the pause offered when an API key is revoked), and resuming it, switching on more events or switching on a URL it already had from the dashboard, keep it, so an integration an API key re-pointed still shows the key. The account owner is emailed for each change. During bursts of more than 10 changes in an hour, further changes are combined into summary emails. If the integration changes while the update is being applied (for example the owner pauses it at the same moment), the update reads it again and is applied once more on top of that change (every check runs again on the new state); only if it changes again does the request return 409 conflict ('The integration changed while this update was being applied. Read it again and retry.'), and then nothing changes: read the integration again (GET /integrations/{id}) and retry. If the API key making the request is revoked in that moment, the request returns 401 unauthorized ('This API key has been revoked') and nothing is applied.",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
+            "in": "path",
             "required": true,
+            "description": "Integration ID (from GET /integrations)",
             "schema": {
               "type": "integer"
             }
@@ -408,33 +574,103 @@
                 "type": "object",
                 "properties": {
                   "displayName": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   },
                   "status": {
                     "type": "string",
                     "enum": [
                       "connected",
-                      "disabled",
-                      "needs_attention"
-                    ]
+                      "disabled"
+                    ],
+                    "description": "disabled pauses all sending; connected resumes it (re-enables a disabled or needs_attention integration). needs_attention is system-only: sending it returns 400 validation_error, unless the integration already is needs_attention (then it is a harmless no-op)."
                   },
                   "subscriptions": {
                     "type": "array",
+                    "maxItems": 20,
                     "items": {
                       "type": "object",
+                      "required": [
+                        "eventType"
+                      ],
                       "properties": {
                         "eventType": {
-                          "type": "string"
+                          "type": "string",
+                          "enum": [
+                            "lead.created",
+                            "lead.updated",
+                            "export.completed",
+                            "email_schedule.sent",
+                            "credit.low_balance"
+                          ]
                         },
                         "targetUrl": {
                           "type": "string",
-                          "nullable": true
+                          "format": "uri",
+                          "maxLength": 2048,
+                          "nullable": true,
+                          "description": "Webhook integrations. Omit to use defaultTargetUrl, or else this event's current URL (the integration's first URL for a new event)."
                         },
                         "isActive": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "false keeps the subscription, but live events never use it, and webhook tests and pushes do not either (a CRM test or push still goes to the connected CRM). POST /integrations/{id}/deliveries/{deliveryId}/retry still re-sends a past delivery to the URL it was first sent to. A new targetUrl still counts as a destination change (owner email) even on an inactive subscription."
                         },
                         "config": {
-                          "type": "object"
+                          "type": "object",
+                          "additionalProperties": true,
+                          "nullable": true
+                        }
+                      }
+                    }
+                  },
+                  "defaultTargetUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "maxLength": 2048,
+                    "description": "Webhook integrations only (400 bad_request on a CRM). Sent without subscriptions, it re-points every existing subscription (inactive ones and per-event URLs too) to this URL. Sent with subscriptions, it is the URL for each subscription that has no targetUrl. A webhook subscription with neither keeps that event's current URL, or the integration's first URL for a new event. To change only some events, send subscriptions instead."
+                  },
+                  "apiKey": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true,
+                    "description": "Header API key sent as X-SMB-API-Key. Applies only to Clay integrations and to webhook integrations that already send a header API key; on a CRM it returns 400 bad_request ('apiKey only applies to webhook integrations'), on any other webhook 400 bad_request ('apiKey only applies to Clay integrations and to webhook integrations that already send a header API key'). A new value replaces the key; null or an empty string stops sending it. The key is only sent to the active destination URLs it is bound to, never to a different host: a new value is bound to the integration's active destinations on the origin of its destination, and an edit in the dashboard binds it again the same way. A URL on a switched-off (inactive) subscription is never bound, so switching that subscription on later (which needs no apiKey, because the URL is not new) does not send the key there until the owner edits the integration in the dashboard or apiKey is sent again. When an API key (REST or MCP) points an integration that has a header API key at a new destination URL (any URL on none of its subscriptions yet, even on the same host), apiKey is required in the same request (a new value, or null to stop sending it); otherwise 400 bad_request ('This integration sends a header API key. Pointing it at a new destination URL requires apiKey in the same request (a new value, or null to stop sending it).'). Stored encrypted and never returned."
+                  },
+                  "pipedriveDeals": {
+                    "type": "object",
+                    "description": "Pipedrive integrations only: create a Deal for each pushed lead",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "pipelineId": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "stageId": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "defaultValue": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "defaultCurrency": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 8
+                      },
+                      "expectedCloseDays": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3650
+                      },
+                      "fieldMap": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
                         }
                       }
                     }
@@ -452,7 +688,7 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "integration": {
+                    "data": {
                       "$ref": "#/components/schemas/Integration"
                     }
                   }
@@ -460,8 +696,102 @@
               }
             }
           },
+          "400": {
+            "description": "validation_error (details lists the problems, including status needs_attention on an integration that is not already needs_attention) or bad_request (invalid id, unsafe URL, defaultTargetUrl on a CRM integration, 'apiKey only applies to webhook integrations' (apiKey on a CRM), 'apiKey only applies to Clay integrations and to webhook integrations that already send a header API key', pipedriveDeals on a non-Pipedrive integration, deals enabled without a pipeline and stage, or 'This integration sends a header API key. Pointing it at a new destination URL requires apiKey in the same request (a new value, or null to stop sending it).').",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or revoked API key. Also returned ('This API key has been revoked') when the API key making the request is revoked while the update is being applied; nothing is applied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "unauthorized",
+                  "message": "This API key has been revoked"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "integration_exists: the new destination is already used by another integration of the same provider on your account; nothing changed. conflict ('The integration changed while this update was being applied. Read it again and retry.'): the integration or its subscriptions changed twice while this update was being applied (a single change, for example the owner pausing it at the same moment, is absorbed: the update is applied again on top of it); nothing changed. Read it again (GET /integrations/{id}), check the change still makes sense, and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error. The change may already have been saved: check GET /integrations/{id} before repeating it. (A 503 service_unavailable is only returned before anything was written.)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       },
@@ -469,17 +799,15 @@
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "deleteIntegration",
+        "summary": "Delete an integration",
+        "description": "Deletes the integration with its subscriptions and delivery history. Sending stops immediately.",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
+            "in": "path",
             "required": true,
+            "description": "Integration ID (from GET /integrations)",
             "schema": {
               "type": "integer"
             }
@@ -489,34 +817,99 @@
           "200": {
             "$ref": "#/components/responses/DeleteSuccess"
           },
+          "400": {
+            "description": "bad_request: invalid id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
     },
     "/integrations/{id}/deliveries": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
       "get": {
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "listIntegrationDeliveries",
-        "summary": "Last 50 delivery attempts",
+        "summary": "List recent deliveries",
+        "description": "Returns the newest 50 delivery attempts for the integration.",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
+            "in": "path",
             "required": true,
+            "description": "Integration ID (from GET /integrations)",
             "schema": {
               "type": "integer"
             }
@@ -530,90 +923,119 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "deliveries": {
+                    "data": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "integer"
-                          },
-                          "eventType": {
-                            "type": "string"
-                          },
-                          "status": {
-                            "type": "string",
-                            "enum": [
-                              "success",
-                              "failed",
-                              "pending"
-                            ]
-                          },
-                          "statusCode": {
-                            "type": "integer",
-                            "nullable": true
-                          },
-                          "attemptCount": {
-                            "type": "integer"
-                          },
-                          "latencyMs": {
-                            "type": "integer",
-                            "nullable": true
-                          },
-                          "errorMessage": {
-                            "type": "string",
-                            "nullable": true
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "completedAt": {
-                            "type": "string",
-                            "format": "date-time",
-                            "nullable": true
-                          }
-                        }
+                        "$ref": "#/components/schemas/IntegrationDelivery"
                       }
                     }
                   }
                 }
               }
             }
+          },
+          "400": {
+            "description": "bad_request: invalid id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
     },
     "/integrations/{id}/deliveries/{deliveryId}/retry": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
       "post": {
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "retryIntegrationDelivery",
-        "summary": "Retry a single previous delivery using its stored payload",
+        "summary": "Retry a delivery",
+        "description": "Sends the stored payload of a past delivery again, to the URL it was first sent to (webhooks; even if that subscription is now inactive or points elsewhere) or to the connected CRM. Lead data leaves SMB Sales Boost again, so confirm with the account owner first. No credits are charged. A paused integration (status disabled) must be re-enabled first (PATCH status connected). If the retry succeeds on a needs_attention integration, the integration returns to connected; that counts as re-enabling it (recorded in lastChangedVia, owner emailed). A failed attempt returns 200 with status failed.",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
+            "in": "path",
             "required": true,
+            "description": "Integration ID (from GET /integrations)",
             "schema": {
               "type": "integer"
             }
           },
           {
-            "in": "path",
             "name": "deliveryId",
+            "in": "path",
             "required": true,
+            "description": "Delivery ID (from GET /integrations/{id}/deliveries)",
             "schema": {
               "type": "integer"
             }
@@ -627,58 +1049,122 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "success",
-                        "failed"
-                      ]
-                    },
-                    "statusCode": {
-                      "type": "integer",
-                      "nullable": true
-                    },
-                    "latencyMs": {
-                      "type": "integer",
-                      "nullable": true
-                    },
-                    "error": {
-                      "type": "string",
-                      "nullable": true
+                    "data": {
+                      "$ref": "#/components/schemas/IntegrationDeliveryResult"
                     }
                   }
                 }
               }
             }
           },
+          "400": {
+            "description": "bad_request: invalid id or deliveryId, or bad_request 'Integration is paused. Re-enable it first (PATCH status connected).' when the integration's status is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "not_found: the integration or the delivery does not exist on your account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
     },
     "/integrations/{id}/test": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
       "post": {
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "testIntegration",
-        "summary": "Fire a synthetic test event",
+        "summary": "Send a test event",
+        "description": "Sends a synthetic signed lead.created event (a sample business named Acme Test Co) to the real destination. For a CRM this creates a real test record in the CRM that is not removed afterwards. Confirm with the account owner first. Webhook test events and pushes only ever use an active subscription: the active one for the event, else any active subscription with a targetUrl; with none, the attempt fails with 'No active subscription for this integration'. A paused integration (status disabled) must be re-enabled first (PATCH status connected). If the test succeeds on a needs_attention integration, the integration returns to connected; that counts as re-enabling it (recorded in lastChangedVia, owner emailed). A failed attempt returns 200 with status failed.",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
+            "in": "path",
             "required": true,
+            "description": "Integration ID (from GET /integrations)",
             "schema": {
               "type": "integer"
             }
@@ -692,58 +1178,122 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "success",
-                        "failed"
-                      ]
-                    },
-                    "statusCode": {
-                      "type": "integer",
-                      "nullable": true
-                    },
-                    "latencyMs": {
-                      "type": "integer",
-                      "nullable": true
-                    },
-                    "error": {
-                      "type": "string",
-                      "nullable": true
+                    "data": {
+                      "$ref": "#/components/schemas/IntegrationDeliveryResult"
                     }
                   }
                 }
               }
             }
           },
+          "400": {
+            "description": "bad_request: invalid id, or bad_request 'Integration is paused. Re-enable it first (PATCH status connected).' when the integration's status is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
     },
     "/integrations/{id}/push-lead": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
       "post": {
         "tags": [
           "Integrations"
         ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
         "operationId": "pushLeadToIntegration",
-        "summary": "Push a single lead on demand",
+        "summary": "Push one lead to an integration",
+        "description": "Sends one lead to the integration now. Send leadId to push a lead from the SMB Sales Boost database: it is tracked like an export (it appears in lead export history with method crm_push), costs 1 credit when the lead is new to you and nothing when you already received it (a lead you already own is pushed free even at a 0 balance; a new lead without credits returns 402), respects your export blacklist, and only the fields an export includes are sent. Send lead to push your own data instead: untracked and free. The integration must be connected (status connected). Confirm with the account owner first: the lead's business contact details leave SMB Sales Boost. The target integration receives the lead once, from this push only: it is left out of the background lead.created / lead.updated events the push triggers. Your OTHER integrations still get those events: a tracked lead you had not received before counts as received and sends lead.created to your other integrations subscribed to lead.created, and re-pushing a lead you already received sends lead.updated to your other integrations subscribed to lead.updated. Webhook test events and pushes only ever use an active subscription: the active one for the event, else any active subscription with a targetUrl; with none, the attempt fails with 'No active subscription for this integration'. Pushes through the API or MCP (and the dashboard's per-lead push) are recorded in GET /integrations/{id}/deliveries, HubSpot and Salesforce included; a push refused before anything is sent (for example 'No active subscription for this integration', answered as 200 with status failed, tracked false and creditsUsed 0) is not charged, not added to your export history, triggers no events and is not recorded. After a timeout, check the deliveries (and, for a CRM, the CRM itself) before pushing again.",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
+            "in": "path",
             "required": true,
+            "description": "Integration ID (from GET /integrations)",
             "schema": {
               "type": "integer"
             }
@@ -755,13 +1305,16 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "lead"
-                ],
+                "description": "Exactly one of leadId or lead",
                 "properties": {
+                  "leadId": {
+                    "type": "integer",
+                    "description": "Lead ID from GET /leads or GET /leads/preview (tracked; 1 credit if new to you)"
+                  },
                   "lead": {
                     "type": "object",
-                    "additionalProperties": true
+                    "additionalProperties": true,
+                    "description": "Your own lead data (untracked, free)"
                   }
                 }
               }
@@ -776,14 +1329,144 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": {
-                      "type": "string"
-                    },
-                    "statusCode": {
-                      "type": "integer",
-                      "nullable": true
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "success",
+                            "failed"
+                          ]
+                        },
+                        "tracked": {
+                          "type": "boolean",
+                          "description": "true when leadId was pushed and recorded in your export history; false for your own lead data, and for a push refused before anything was sent (for example 'No active subscription for this integration')"
+                        },
+                        "creditsUsed": {
+                          "type": "integer",
+                          "description": "Credits charged (0 or 1). Always 0 when the push was refused before anything was sent (for example 'No active subscription for this integration')."
+                        },
+                        "result": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "description": "Provider result, for example the CRM record ids"
+                        },
+                        "error": {
+                          "type": "string",
+                          "description": "Why the push failed (when status is failed)"
+                        }
+                      }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "validation_error or bad_request (invalid id, neither leadId nor lead, or the integration is not connected).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "insufficient_credits: the lead is new to you and your balance cannot cover 1 credit. Nothing was pushed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: no active or trialing paid subscription, or (plans without credits only) the push would exceed your plan's export limits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: the integration or the lead does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error. Not retryable. If it happens while charging ('Push failed while charging. A credit may have been taken; check GET /me and your export history before pushing this lead again.'), 1 credit may have been taken without a push: check GET /me, your export history and GET /integrations/{id}/deliveries before repeating.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (not temporary, no Retry-After, do not retry), or service_unavailable: a temporary failure raised only before any charge or push; safe to retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -791,45 +1474,1070 @@
         }
       }
     },
-    "/integrations/hubspot/start": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
-      "get": {
+    "/integrations/{provider}/connect": {
+      "post": {
         "tags": [
           "Integrations"
         ],
-        "security": [
+        "operationId": "connectCrmIntegration",
+        "summary": "Start connecting a CRM",
+        "description": "Starts the OAuth connection for HubSpot, Salesforce or Pipedrive and returns authorizationUrl. Nothing is connected yet: the user must open authorizationUrl in a browser and approve access within 10 minutes. The CRM integration then appears in GET /integrations and starts receiving lead data on its initial events (HubSpot: lead.created on, lead.updated present but off - turn it on with PATCH /integrations/{id}; Salesforce: lead.created; Pipedrive: lead.created and lead.updated). GET /integrations shows the real isActive of each event. Only share the URL with the account owner: whoever approves it attaches their CRM to this account. If the API key that started the connection is revoked before the user approves, nothing is connected and the browser lands on the dashboard with <provider>_error=key_revoked. The CRMs are available when they are configured for this deployment; otherwise this returns 503 provider_unavailable. Any other provider in the path returns 404 not_found. Safeguard: when an API key (REST or MCP) creates a webhook, connects a CRM, changes where an integration sends data, adds or re-activates an event, or re-enables an integration, SMB Sales Boost records the key on the integration (createdVia / lastChangedVia, shown in the dashboard as 'Created via API key smbk_...') and emails the account owner. The account owner is emailed for each change. During bursts of more than 10 changes in an hour, further changes are combined into summary emails.",
+        "parameters": [
           {
-            "SessionCookie": []
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hubspot",
+                "salesforce",
+                "pipedrive"
+              ]
+            }
           }
         ],
-        "operationId": "startHubspotOAuth",
-        "summary": "Begin HubSpot OAuth flow",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "environment": {
+                    "type": "string",
+                    "enum": [
+                      "production",
+                      "sandbox"
+                    ],
+                    "default": "production",
+                    "description": "Salesforce only: which org to connect"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "Authorize URL",
+            "description": "Authorization URL",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "url": {
-                      "type": "string",
-                      "format": "uri"
-                    },
-                    "state": {
-                      "type": "string"
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "hubspot",
+                            "salesforce",
+                            "pipedrive"
+                          ]
+                        },
+                        "authorizationUrl": {
+                          "type": "string",
+                          "format": "uri",
+                          "description": "Open in a browser to approve the connection"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "The URL stops working after this time (10 minutes)"
+                        }
+                      }
                     }
                   }
                 }
               }
             }
           },
+          "400": {
+            "description": "bad_request: environment was sent for a provider other than Salesforce, or it is not production or sandbox.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "not_found: the provider in the path is not hubspot, salesforce or pipedrive.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "integration_limit: the account already has 25 integrations; delete one before connecting another.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Connect requests are limited to 30 per minute per account (shared with the dashboard's connect buttons), and also count against the shared integrations budget of 60 requests per minute per account. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
-            "description": "HubSpot is not configured for this deployment"
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/{id}/field-mapping": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "operationId": "getIntegrationFieldMapping",
+        "summary": "Get the CRM field mapping",
+        "description": "HubSpot, Salesforce and Pipedrive integrations only. Returns the SMB Sales Boost lead fields, the CRM's fields and the current mapping. Reads the CRM's field list (cached for 10 minutes).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Integration ID (from GET /integrations)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "description": "true reloads the CRM's field list instead of using the cache",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field catalog and mapping",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/IntegrationFieldCatalog"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "validation_error (details lists the problems) or bad_request (invalid id, or the integration is not the provider this endpoint is for).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "provider_error: the CRM's API failed or refused the request (for example the connection was revoked in the CRM). Nothing was changed on SMB Sales Boost; retry later or reconnect the CRM.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Integrations"
+        ],
+        "operationId": "updateIntegrationFieldMapping",
+        "summary": "Update the CRM field mapping",
+        "description": "Sets which CRM field receives each SMB Sales Boost lead field. HubSpot takes contact and company, Salesforce takes lead, Pipedrive takes person and organization. The mapping is replaced as a whole: a scope of this CRM that you leave out is cleared. A scope that belongs to another CRM, or a body with no scope at all, returns 400 validation_error and changes nothing (use DELETE to reset).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Integration ID (from GET /integrations)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationFieldMapping"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved mapping",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "mapping": {
+                          "$ref": "#/components/schemas/IntegrationFieldMapping"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "validation_error (details lists the problems): a scope that belongs to another CRM (for example 'Scope(s) lead do not apply to HubSpot integrations. HubSpot takes: contact, company.'), or no scope at all (send at least one scope; use DELETE /integrations/{id}/field-mapping to reset). Or bad_request (invalid id, or the integration is not a HubSpot, Salesforce or Pipedrive integration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Integrations"
+        ],
+        "operationId": "resetIntegrationFieldMapping",
+        "summary": "Reset the CRM field mapping",
+        "description": "Clears the custom mapping so the built-in defaults apply again.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Integration ID (from GET /integrations)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reset mapping",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "mapping": {
+                          "$ref": "#/components/schemas/IntegrationFieldMapping"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "validation_error (details lists the problems) or bad_request (invalid id, or the integration is not the provider this endpoint is for).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/{id}/field-mapping/test": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "operationId": "testIntegrationFieldMapping",
+        "summary": "Dry-run the CRM field mapping",
+        "description": "Checks a mapping against the real CRM: creates synthetic test records with it, then deletes them. Send mapping to test an unsaved mapping; omit it to test the saved one. Confirm with the account owner first, because it writes to their CRM briefly.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Integration ID (from GET /integrations)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mapping": {
+                    "$ref": "#/components/schemas/IntegrationFieldMapping"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MappingValidationResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "validation_error (details lists the problems; a scope that belongs to another CRM is rejected, for example 'Scope(s) lead do not apply to HubSpot integrations. HubSpot takes: contact, company.') or bad_request (invalid id, or the integration is not a HubSpot, Salesforce or Pipedrive integration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "provider_error: the CRM's API failed or refused the request (for example the connection was revoked in the CRM). Nothing was changed on SMB Sales Boost; retry later or reconnect the CRM.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/{id}/pipedrive/pipelines": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "operationId": "listPipedrivePipelines",
+        "summary": "List Pipedrive pipelines",
+        "description": "Pipedrive integrations only. Returns the pipelines and stages to choose from for pipedriveDeals (PATCH /integrations/{id}).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Integration ID (from GET /integrations)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipelines",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PipedrivePipeline"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "validation_error (details lists the problems) or bad_request (invalid id, or the integration is not the provider this endpoint is for).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "provider_error: the CRM's API failed or refused the request (for example the connection was revoked in the CRM). Nothing was changed on SMB Sales Boost; retry later or reconnect the CRM.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/{id}/pipedrive/deal-fields": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "operationId": "listPipedriveDealFields",
+        "summary": "List Pipedrive deal fields",
+        "description": "Pipedrive integrations only. Returns the SMB Sales Boost lead fields, the Pipedrive deal fields and the current deal field map (pipedriveDeals.fieldMap).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Integration ID (from GET /integrations)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deal fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "smbFields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        "dealFields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        "cachedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "fieldMap": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "validation_error (details lists the problems) or bad_request (invalid id, or the integration is not the provider this endpoint is for).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "not_found: no integration with this id belongs to your account. Use GET /integrations to list your integrations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. Every integration endpoint shares one budget per account of 60 requests per minute (the dashboard's Integrations tab and every API key of the account count against the same budget), on top of the usual per-key API limit. Wait for the Retry-After delay (also in the retryAfter body field), then retry.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 429)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "provider_error: the CRM's API failed or refused the request (for example the connection was revoked in the CRM). Nothing was changed on SMB Sales Boost; retry later or reconnect the CRM.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "provider_unavailable: this provider is not available on this deployment yet (message '<Provider> is not available yet.'; not temporary, no Retry-After header, do not retry; GET /integrations/providers shows availability), or service_unavailable: a temporary failure, retry after the Retry-After delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying (service_unavailable only)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -837,7 +2545,8 @@
     "/integrations/hubspot/callback": {
       "servers": [
         {
-          "url": "https://smbsalesboost.com/api"
+          "url": "https://smbsalesboost.com/api",
+          "description": "OAuth redirect targets are mounted under /api (not /api/v1)"
         }
       ],
       "get": {
@@ -846,7 +2555,8 @@
         ],
         "security": [],
         "operationId": "hubspotOAuthCallback",
-        "summary": "HubSpot OAuth callback",
+        "summary": "HubSpot OAuth redirect (browser only)",
+        "description": "The redirect URI registered with HubSpot. HubSpot sends the user's browser here after they approve the authorizationUrl from POST /integrations/hubspot/connect; API clients never call it. It creates the integration and redirects to the dashboard Integrations tab. On failure the redirect carries hubspot_error=<reason>, for example key_revoked (the API key that started the connection was revoked; nothing was created), already_connected or integration_limit.",
         "parameters": [
           {
             "in": "query",
@@ -872,65 +2582,11 @@
         }
       }
     },
-    "/integrations/salesforce/start": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
-      "get": {
-        "tags": [
-          "Integrations"
-        ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
-        "operationId": "startSalesforceOAuth",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "env",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "production",
-                "sandbox"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Authorize URL",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "url": {
-                      "type": "string",
-                      "format": "uri"
-                    },
-                    "state": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Salesforce is not configured for this deployment"
-          }
-        }
-      }
-    },
     "/integrations/salesforce/callback": {
       "servers": [
         {
-          "url": "https://smbsalesboost.com/api"
+          "url": "https://smbsalesboost.com/api",
+          "description": "OAuth redirect targets are mounted under /api (not /api/v1)"
         }
       ],
       "get": {
@@ -939,6 +2595,8 @@
         ],
         "security": [],
         "operationId": "salesforceOAuthCallback",
+        "summary": "Salesforce OAuth redirect (browser only)",
+        "description": "The redirect URI registered with Salesforce. Salesforce sends the user's browser here after they approve the authorizationUrl from POST /integrations/salesforce/connect; API clients never call it. It creates the integration and redirects to the dashboard Integrations tab. On failure the redirect carries salesforce_error=<reason>, for example key_revoked (the API key that started the connection was revoked; nothing was created), already_connected or integration_limit.",
         "parameters": [
           {
             "in": "query",
@@ -964,53 +2622,11 @@
         }
       }
     },
-    "/integrations/pipedrive/start": {
-      "servers": [
-        {
-          "url": "https://smbsalesboost.com/api"
-        }
-      ],
-      "get": {
-        "tags": [
-          "Integrations"
-        ],
-        "security": [
-          {
-            "SessionCookie": []
-          }
-        ],
-        "operationId": "startPipedriveOAuth",
-        "summary": "Begin Pipedrive OAuth flow",
-        "responses": {
-          "200": {
-            "description": "Authorize URL",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "url": {
-                      "type": "string",
-                      "format": "uri"
-                    },
-                    "state": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Pipedrive is not configured for this deployment"
-          }
-        }
-      }
-    },
     "/integrations/pipedrive/callback": {
       "servers": [
         {
-          "url": "https://smbsalesboost.com/api"
+          "url": "https://smbsalesboost.com/api",
+          "description": "OAuth redirect targets are mounted under /api (not /api/v1)"
         }
       ],
       "get": {
@@ -1019,7 +2635,8 @@
         ],
         "security": [],
         "operationId": "pipedriveOAuthCallback",
-        "summary": "Pipedrive OAuth callback",
+        "summary": "Pipedrive OAuth redirect (browser only)",
+        "description": "The redirect URI registered with Pipedrive. Pipedrive sends the user's browser here after they approve the authorizationUrl from POST /integrations/pipedrive/connect; API clients never call it. It creates the integration and redirects to the dashboard Integrations tab. On failure the redirect carries pipedrive_error=<reason>, for example key_revoked (the API key that started the connection was revoked; nothing was created), already_connected or integration_limit.",
         "parameters": [
           {
             "in": "query",
@@ -6662,12 +8279,6 @@
   },
   "components": {
     "securitySchemes": {
-      "SessionCookie": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "connect.sid",
-        "description": "Browser session cookie issued by Supabase Auth sign-in. The Integrations endpoints accept ONLY this - an 'smbk_' API key is rejected with 401 on every Integrations operation. Use the dashboard (the Integrations tab) rather than an API client."
-      },
       "BearerAuth": {
         "type": "http",
         "scheme": "bearer",
@@ -8307,7 +9918,18 @@
             "type": "integer"
           },
           "provider": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "hubspot",
+              "salesforce",
+              "pipedrive",
+              "zapier",
+              "n8n",
+              "make",
+              "pipedream",
+              "clay",
+              "generic_webhook"
+            ]
           },
           "providerName": {
             "type": "string"
@@ -8318,7 +9940,8 @@
           },
           "externalAccountId": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Webhooks: the first 200 characters of the destination URL. CRMs: the connected account (HubSpot hub id, Salesforce instance URL, Pipedrive API domain)."
           },
           "authMethod": {
             "type": "string",
@@ -8334,11 +9957,14 @@
               "connected",
               "disabled",
               "needs_attention"
-            ]
+            ],
+            "description": "connected = sending; disabled = paused by the owner or an API key (nothing is sent); needs_attention = set by SMB Sales Boost after repeated delivery failures (background events are not sent until it is re-enabled). You can only set connected or disabled."
           },
           "metadata": {
             "type": "object",
-            "additionalProperties": true
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "null for webhook integrations (Zapier, n8n, Make, Pipedream, Clay, Generic Webhook). For CRMs: connection details (hubId / instanceUrl / apiDomain), cached field lists, the field mapping and Pipedrive deal settings."
           },
           "consecutiveFailures": {
             "type": "integer"
@@ -8375,23 +10001,58 @@
                   "type": "integer"
                 },
                 "eventType": {
-                  "type": "string"
+                  "type": "string",
+                  "enum": [
+                    "lead.created",
+                    "lead.updated",
+                    "export.completed",
+                    "email_schedule.sent",
+                    "credit.low_balance"
+                  ]
                 },
                 "targetUrl": {
                   "type": "string",
                   "nullable": true
                 },
                 "isActive": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "false = the subscription is kept, but live events never use it, and webhook tests and pushes do not either (a CRM test or push still goes to the connected CRM). POST /integrations/{id}/deliveries/{deliveryId}/retry re-sends a past delivery to the URL it was first sent to, whatever the subscription's state now."
                 },
                 "config": {
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "nullable": true
                 }
               }
-            }
+            },
+            "description": "Event subscriptions. Each active subscription sends lead data to its targetUrl (webhooks) or the connected CRM on every matching event."
+          },
+          "createdVia": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IntegrationChangeSource"
+              }
+            ],
+            "nullable": true,
+            "description": "Who created the integration. null = created before this was recorded (unknown)."
+          },
+          "lastChangedVia": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IntegrationChangeSource"
+              }
+            ],
+            "nullable": true,
+            "description": "Who last changed where this integration sends data. Every API key (REST or MCP) change that sends data somewhere new is recorded (a new destination URL, events added or re-activated, re-enabling). A dashboard change is recorded only when it adds a destination URL the integration never had. Pausing the integration (including the pause offered when an API key is revoked), and resuming it, switching on more events or switching on a URL that was already on one of its subscriptions (for example one an API key added on a switched-off subscription) from the dashboard, keep the existing value, so an integration an API key re-pointed keeps showing that key. null = not changed since it was created."
+          },
+          "lastChangedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When lastChangedVia was recorded."
           }
-        }
+        },
+        "description": "An integration. Never includes OAuth tokens, the signing secret or stored API keys."
       },
       "Enrichment": {
         "type": "object",
@@ -8574,6 +10235,373 @@
           "creditsRemaining": {
             "type": "integer",
             "description": "Your total remaining credits at the time of the refusal"
+          }
+        }
+      },
+      "IntegrationChangeSource": {
+        "type": "object",
+        "description": "Which channel made a change, and with which API key.",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "api",
+              "mcp"
+            ],
+            "description": "dashboard = signed in to the web app; api = REST API with an API key; mcp = the MCP server with an API key"
+          },
+          "apiKey": {
+            "type": "object",
+            "nullable": true,
+            "description": "The API key used (null for dashboard changes). Never includes the key itself.",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "keyPrefix": {
+                "type": "string",
+                "example": "smbk_AbCdEfG..."
+              },
+              "name": {
+                "type": "string"
+              },
+              "revoked": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "IntegrationProvider": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "hubspot",
+              "salesforce",
+              "pipedrive",
+              "zapier",
+              "n8n",
+              "make",
+              "pipedream",
+              "clay",
+              "generic_webhook"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "example": "Zapier"
+          },
+          "tagline": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "authMethod": {
+            "type": "string",
+            "enum": [
+              "oauth2",
+              "webhook",
+              "api_key_webhook"
+            ]
+          },
+          "ownerSetupRequired": {
+            "type": "boolean",
+            "description": "true for the CRMs (HubSpot, Salesforce, Pipedrive): they need an OAuth app configured for this deployment"
+          },
+          "defaultEvents": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "lead.created",
+                "lead.updated",
+                "export.completed",
+                "email_schedule.sent",
+                "credit.low_balance"
+              ]
+            }
+          },
+          "supportsPerLeadPush": {
+            "type": "boolean"
+          },
+          "setupHelpUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "helpText": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "false when the provider is not configured for this deployment; creating or connecting it then returns 503 provider_unavailable"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the provider is unavailable (only when available is false)"
+          }
+        }
+      },
+      "IntegrationDelivery": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "targetUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "failed",
+              "pending"
+            ]
+          },
+          "statusCode": {
+            "type": "integer",
+            "nullable": true
+          },
+          "attemptCount": {
+            "type": "integer"
+          },
+          "latencyMs": {
+            "type": "integer",
+            "nullable": true
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "responseBody": {
+            "type": "string",
+            "nullable": true,
+            "description": "The start of the destination's response body (up to 1,000 characters)"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "IntegrationDeliveryResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "failed"
+            ]
+          },
+          "statusCode": {
+            "type": "integer",
+            "description": "The destination's HTTP status (webhooks)"
+          },
+          "latencyMs": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string",
+            "description": "Why the delivery failed (when status is failed)"
+          }
+        }
+      },
+      "IntegrationFieldMapping": {
+        "type": "object",
+        "description": "Which CRM field receives each SMB Sales Boost lead field, per record type. HubSpot uses contact and company, Salesforce uses lead, Pipedrive uses person and organization. Fields left out use the built-in defaults.",
+        "properties": {
+          "contact": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "SMB Sales Boost field id -> CRM field key"
+          },
+          "company": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "SMB Sales Boost field id -> CRM field key"
+          },
+          "lead": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "SMB Sales Boost field id -> CRM field key"
+          },
+          "person": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "SMB Sales Boost field id -> CRM field key"
+          },
+          "organization": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "SMB Sales Boost field id -> CRM field key"
+          }
+        }
+      },
+      "IntegrationFieldCatalog": {
+        "type": "object",
+        "description": "The SMB Sales Boost lead fields, the CRM's fields (cached for 10 minutes; ?refresh=true reloads them) and the current mapping. HubSpot returns contactFields and companyFields; Salesforce returns leadFields, contactFields and accountFields; Pipedrive returns personFields and organizationFields.",
+        "properties": {
+          "smbFields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "description": "The SMB Sales Boost lead fields that can be mapped"
+          },
+          "contactFields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "companyFields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "leadFields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "accountFields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "personFields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "organizationFields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "cachedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "mapping": {
+            "$ref": "#/components/schemas/IntegrationFieldMapping"
+          }
+        }
+      },
+      "MappingValidationResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "ok": {
+                  "type": "boolean"
+                },
+                "issues": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "smbFieldId": {
+                        "type": "string"
+                      },
+                      "targetField": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      },
+                      "severity": {
+                        "type": "string",
+                        "enum": [
+                          "error",
+                          "warning"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "PipedrivePipeline": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "orderNr": {
+                  "type": "integer"
+                }
+              }
+            }
           }
         }
       }
