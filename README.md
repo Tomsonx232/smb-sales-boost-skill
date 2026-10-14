@@ -6,6 +6,15 @@ Find and export growing local businesses with plain-language requests. This skil
 
 Ask things like "find med spas in Florida with a buying signal this week", "export 500 dental practices in Texas, spend at most 300 credits" or "get the contact details for these 200 websites", and the agent turns them into the right API calls.
 
+## What's new in version 1.9.6 (October 2026)
+
+Long-running calls no longer hit the 100-second network timeout:
+
+- **Background jobs:** `POST /leads/export`, `POST /email-schedules/{id}/trigger`, `POST /ai/suggest-categories` and the three `POST /lead-export-history/...` calls now answer as usual when they finish within about 75 seconds, and otherwise answer `202` with a `jobId` while the work keeps running on the server. The script follows the job with the new `GET /jobs/{jobId}` endpoint (progress is printed on stderr) and then handles the final answer exactly like before: exports and files are saved the same way.
+- **Safe retries:** each of these calls sends an idempotency key and prints it. If a call times out, re-running the same command with `--idempotency-key` set to that value returns the same job instead of exporting or sending again (the server keeps the key with the job for up to about 25 hours after it finishes, about 48 hours for a schedule trigger; a server restart forgets it).
+- **New options:** `--async` (answer `202` at once and print the `jobId`), `--no-wait` (print the `jobId` instead of following a `202`) and `--job-timeout SEC` (how long to follow a job, default 3600). `GET /jobs/{jobId}` can also be called directly; it waits for the result and saves any file.
+- **New answers:** `409 schedule_run_in_progress` when a schedule's regular run is sending it at that moment (nothing was sent), `429 job_capacity_busy` and, for exports and lead searches, `429 charge_in_progress` (nothing was charged), `410 job_result_expired` once a finished result is no longer kept (for about a day, then `404 job_not_found`; never repeat an export or a send then, check what it already did first), and `503 schema_types_warming` from `GET /leads/other/schema-types` right after a server restart. `REFERENCE.md` section 16 has the details, and `openapi.json` matches the live API.
+
 ## What's new in version 1.9.5 (October 2026)
 
 - Version number only: this release has the same content as 1.9.4 and is published as 1.9.5. `smb_api.py --version` and the User-Agent the script sends now report 1.9.5.
@@ -142,7 +151,7 @@ Never paste your API key into a chat, a shared document or version control.
 - **Your approval before emailing anyone or deleting anything.** Email schedules are created paused for your review; sending, cancelling, deleting and keyword regeneration also need `--confirm`.
 - **Your approval before lead data leaves SMB Sales Boost.** Creating a webhook integration, connecting a CRM, pointing an integration at a new destination, re-enabling it, changing the header API key it sends, pushing a lead, sending a test event, retrying a delivery and changing or testing a CRM field mapping all need `--confirm`, after the agent has told you where the data goes. When an API key creates or re-points an integration, the account owner is emailed for each change; during bursts of more than 10 changes in an hour, further changes are combined into summary emails. The webhook signing secret is shown once and the script never saves it to a file.
 - **Credit caps.** The agent previews first for free and sets a credit limit on every search and export. The script refuses an uncapped search or export unless you approved it, and refuses a cap that the API would ignore.
-- **Safe retries.** Only rate-limit and temporary-unavailability errors are retried automatically, and never on a call that creates, changes or sends through an integration. A request that may have charged or sent data is never repeated blindly; the script explains how to check first.
+- **Safe retries.** Only rate-limit and temporary-unavailability errors are retried automatically, and never on a call that creates, changes or sends through an integration. A request that may have charged or sent data is never repeated blindly; the script explains how to check first. Exports, schedule triggers and the other long-running calls carry an idempotency key, so re-running a timed-out call with that key returns the same job instead of charging or sending again.
 
 ## Security
 

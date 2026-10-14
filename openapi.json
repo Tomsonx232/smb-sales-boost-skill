@@ -85,6 +85,10 @@
     {
       "name": "Enrichments",
       "description": "Enrich a list of website URLs. Each URL is checked against the SMB Sales Boost database first; anything not already there is fetched live. We never add the URLs you submit, or the results we find for them, to our lead database, which we keep curated so it stays clean and focused on high-quality leads.\n\n**Pricing.** 1 credit for a URL in the database you have not bought before (this includes its buying signals and category enrichments). 0.1 credit for a URL fetched live. 0 credits for a URL you have already exported, one we got no data for, and one without the contact details you asked for.\n\n**A URL found in the database is never fetched live**, so lowering `databaseMatchPercent` does not let you buy database records at the live price.\n\n**Runs are asynchronous.** Submitting returns a run id immediately; a large list can take hours. Poll `GET /enrichments/{id}` until `status` is `completed` or `partial`, then call `/download`.\n\n**Credits are charged in two stages.** Database matches are charged as soon as they are matched; live results are charged when the file is published. `credits.final` tells you whether the total is settled."
+    },
+    {
+      "name": "Background Jobs",
+      "description": "Long-running requests. Every request reaches the API through an edge network that gives the server about 100 seconds to start answering, so work that can take longer runs as a background job: POST /leads/export, POST /email-schedules/{id}/trigger, POST /ai/suggest-categories and POST /lead-export-history/refresh, /refresh-and-export and /re-export. Such a request first checks its input and answers a 4xx at once, exactly as before. Otherwise it answers exactly like before when the work finishes within about 75 seconds (or within the wait you ask for with the Prefer header, counted from when the request arrived), plus Cache-Control: no-store and X-SMBSB-Job-Id; if not, it answers 202 Accepted with a jobId, a Location header, a statusUrl and X-SMBSB-Job-Status: running. Either way the answer starts within about 90 seconds of the request's arrival. Poll GET /jobs/{jobId} with any API key of the same account until it no longer answers 202: it then returns exactly what the original request would have returned (same status, headers and body, an error included).\n\n**Idempotency-Key.** Every one of these requests accepts the header (8-64 letters, numbers, underscores or dashes); send one with each export and schedule trigger. Repeating a request with the same key never runs it again: it returns the running job, its stored answer, or, once that answer is no longer kept, 410 job_result_expired. The key stays with the job as long as the server keeps any record of it: up to about 25 hours after the job finished (about 48 hours for a schedule trigger); a server restart forgets every key. An answer of 409, 429 or 503, and a 402 insufficient_credits from POST /leads/export, does not use up the key: nothing happened, so a retry with the same key runs the request. Every other answer, an error included, comes back again for the same key, so after an error answer (for example 400 export_too_large) or when you change any argument, use a new key. The same key with a different request answers 409 idempotency_key_reused; keys are separate per endpoint. Without a key, an identical request (same account, same input) returns the job that is still running; once it has finished, a new identical request runs again.\n\n**Limits.** Each account can run up to 3 exports, 5 schedule triggers, 3 category suggestions and 2 of each Lead Export History request at once; more answer 429 job_capacity_busy with Retry-After: 30. The request still counts toward its endpoint's rate limit (a retry that returns a running job too); polls count only toward the general limit of 600 requests per minute per key.\n\n**Retention.** A finished job's answer is normally kept for 60 minutes (24 hours for a schedule trigger). It can be dropped sooner under heavy load, and each account keeps at most 500 finished jobs (the oldest go first). After that, GET /jobs/{jobId} answers 410 job_result_expired for about a day, with a message that says where to look; then the job is forgotten and the answer is 404 job_not_found. Never repeat an export or a schedule trigger just because its answer is gone: check what it already did first. Exports: the files are in GET /export-history (kept 90 days) and the leads in GET /lead-export-history; a re-run with maxCredits 0 (without excludePurchased) returns leads you already paid for at no charge, while a normal re-run picks new leads first and charges for them. Schedule sends: lastSent and totalSentCount in GET /email-schedules. A server restart interrupts running jobs and forgets kept answers and keys (GET /jobs/{jobId} then answers 404 job_not_found); what a job already saved stays saved, and leads you already received are never charged twice."
     }
   ],
   "paths": {
@@ -3761,7 +3765,72 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimitedOrLeadQueryBusy"
+            "description": "Too many requests, for one of three reasons. (1) A rate limit was exceeded: error 'Rate limit exceeded' with a retryAfter field (seconds, the same as the Retry-After header). (2) Lead search capacity is busy: error 'lead_query_capacity_busy' with Retry-After: 10. (3) Another export, lead search or integration push of your account is still recording its charge and did not finish within 30 seconds (less when the search itself already used most of the request's time): error 'charge_in_progress' with Retry-After: 30. All carry the X-RateLimit-* headers (the per-key rate limiter sets them on every request), so tell them apart by the body's error field, not by the headers. None of them charged anything; retry after the Retry-After delay, or narrow your filters so each query returns faster.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 'Rate limit exceeded' 429; the other 429s show the normal count)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets, as an ISO 8601 date-time (for example 2026-10-07T14:05:00.000Z)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RateLimitError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
+                },
+                "examples": {
+                  "rateLimited": {
+                    "summary": "Rate limit exceeded",
+                    "value": {
+                      "error": "Rate limit exceeded",
+                      "message": "API rate limit exceeded. Please slow down your requests.",
+                      "retryAfter": 42
+                    }
+                  },
+                  "leadQueryCapacityBusy": {
+                    "summary": "Lead search capacity busy",
+                    "value": {
+                      "error": "lead_query_capacity_busy",
+                      "message": "Lead search capacity is currently busy. Retry after the indicated delay, or narrow your filters so each query returns faster."
+                    }
+                  },
+                  "chargeInProgress": {
+                    "summary": "Another charge of your account is still being recorded",
+                    "value": {
+                      "error": "charge_in_progress",
+                      "message": "Another export or push for your account is still being recorded. Please try again in a minute."
+                    }
+                  }
+                }
+              }
+            }
           },
           "500": {
             "description": "internal_error. The request may have been partly processed (credits charged and leads recorded as received), so check creditsRemaining with GET /me before retrying. A retry is not charged again for leads already recorded as received, but it can charge for other new leads, so check first.",
@@ -4355,7 +4424,19 @@
         ],
         "operationId": "getSchemaTypes",
         "summary": "List available website schema types",
-        "description": "Returns a sorted list of all distinct website schema types found in the Main lead database. Use these values with the websiteSchemaFilter parameter on GET /leads.",
+        "description": "Returns a sorted list of all distinct website schema types found in the Main lead database. Use these values with the websiteSchemaFilter parameter on GET /leads. The list is kept up to date in the background, so this normally answers at once. Right after a server restart it can wait up to 55 seconds (or the wait you set with Prefer: wait=N, counted from when the request arrived) for the list to be rebuilt and then answer 503 schema_types_warming (Retry-After: 60).",
+        "parameters": [
+          {
+            "name": "Prefer",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^wait=[0-9]+$"
+            },
+            "description": "wait=N (0-55 seconds): how long to wait, counted from when the request arrived, for the list right after a server restart before answering 503 schema_types_warming. Default: 55 seconds. Use a shorter wait when your client times out sooner."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Array of schema type strings",
@@ -4390,7 +4471,38 @@
             "$ref": "#/components/responses/RateLimited"
           },
           "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
+            "description": "service_unavailable (a temporary failure, for example the database could not be reached during authentication), or schema_types_warming: the list is still being rebuilt after a server restart. Retry after the Retry-After delay (60 seconds for schema_types_warming).",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "schemaTypesWarming": {
+                    "summary": "The list is being rebuilt",
+                    "value": {
+                      "error": "schema_types_warming",
+                      "message": "The list of website schema types is being rebuilt after a server restart. Retry after the indicated delay."
+                    }
+                  },
+                  "serviceUnavailable": {
+                    "summary": "Temporary failure",
+                    "value": {
+                      "error": "service_unavailable",
+                      "message": "Authentication is temporarily unavailable. Retry after the indicated delay."
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4402,7 +4514,7 @@
         ],
         "operationId": "exportLeads",
         "summary": "Export leads to CSV/JSON/XLSX",
-        "description": "Export leads matching your filters (or specific selectedIds) as CSV, JSON or XLSX files. The file type comes from the export format (formatId, or your default format). Up to 100,000 leads per filter export. Rate limited to 5 exports per minute, shared with the other export endpoints and the email schedule trigger.\n\nCredits (credit plans: Starter, Growth, Scale, Platinum, Enterprise): each new lead exported costs 1 credit. Charging is sticky: a lead you have already received through any channel (dashboard, API, MCP or email schedule) is never charged again, even if its data changed later, and a new lead that shares a primary phone or primary email with a lead you already received is also free. New leads are always ordered first, and they are cut to the smaller of maxCredits and your spendable balance (credit balance plus any overage-budget headroom); when the balance was the limit the response carries X-Credits-Capped: true. Omitting maxCredits therefore caps the request at your spendable balance instead of failing. 402 insufficient_credits only happens if a concurrent request spends the balance between the check and the charge.\n\nFile bodies: with inline true (the default) each file's data field holds the whole file, as plain UTF-8 text for csv and json files and as base64 for xlsx files. Set inline=false to receive download links instead, which is recommended for large exports. Every file is also kept in export history for 90 days.\n\nXLSX is limited to 20,000 rows per file. Any xlsx export that would put more than 20,000 rows in one file returns 400 export_too_large: a single-file export, the largest part of a split format (maxRowsPerFile above 20,000 or not set, or equal_parts / parts_max_rows parts that come out larger), or the includeTotal file, which holds every row. That check runs after the leads are charged and recorded as received. Do not simply repeat the request: an export picks new leads first, so a repeat can charge for different leads. Re-run it with maxCredits 0 (and without excludePurchased) using a csv export format or an xlsx format with splitFiles true, splitMode max_rows, maxRowsPerFile of 20,000 or less and includeTotal false, which returns the leads you already have at no cost, or re-export them with POST /lead-export-history/re-export.\n\nDefault-format files name the buying-signal columns Last Buying Signal and Buying Signal Type (CSV/XLSX headers and JSON keys); they no longer have Last Updated / Update Reason columns. To keep the old header names, pass a formatId whose fieldMappings map lastUpdated and lastUpdatedReason to the names you need.",
+        "description": "Export leads matching your filters (or specific selectedIds) as CSV, JSON or XLSX files. The file type comes from the export format (formatId, or your default format). Up to 100,000 leads per filter export. Rate limited to 5 exports per minute, shared with the other export endpoints and the email schedule trigger.\n\nCredits (credit plans: Starter, Growth, Scale, Platinum, Enterprise): each new lead exported costs 1 credit. Charging is sticky: a lead you have already received through any channel (dashboard, API, MCP or email schedule) is never charged again, even if its data changed later, and a new lead that shares a primary phone or primary email with a lead you already received is also free. New leads are always ordered first, and they are cut to the smaller of maxCredits and your spendable balance (credit balance plus any overage-budget headroom); when the balance was the limit the response carries X-Credits-Capped: true. Omitting maxCredits therefore caps the request at your spendable balance instead of failing. 402 insufficient_credits only happens if a concurrent request spends the balance between the check and the charge.\n\nFile bodies: with inline true (the default) each file's data field holds the whole file, as plain UTF-8 text for csv and json files and as base64 for xlsx files. Set inline=false to receive download links instead, which is recommended for large exports. Every file is also kept in export history for 90 days.\n\nXLSX is limited to 20,000 rows per file. Any xlsx export that would put more than 20,000 rows in one file returns 400 export_too_large: a single-file export, the largest part of a split format (maxRowsPerFile above 20,000 or not set, or equal_parts / parts_max_rows parts that come out larger), or the includeTotal file, which holds every row. That check runs after the leads are charged and recorded as received. Do not simply repeat the request: an export picks new leads first, so a repeat can charge for different leads. Re-run it with maxCredits 0 (and without excludePurchased) using a csv export format or an xlsx format with splitFiles true, splitMode max_rows, maxRowsPerFile of 20,000 or less and includeTotal false, which returns the leads you already have at no cost, or re-export them with POST /lead-export-history/re-export.\n\nDefault-format files name the buying-signal columns Last Buying Signal and Buying Signal Type (CSV/XLSX headers and JSON keys); they no longer have Last Updated / Update Reason columns. To keep the old header names, pass a formatId whose fieldMappings map lastUpdated and lastUpdatedReason to the names you need.\n\nLong-running request: it answers exactly as described here when the work finishes within about 75 seconds (or within the wait you set with the Prefer header); otherwise it answers 202 Accepted with a jobId. Poll GET /jobs/{jobId}, which then returns exactly this response. Send an Idempotency-Key header so that a retry after a timeout returns the same job instead of running the request again (see the Background Jobs tag).\n\n**After a 202.** The export keeps running: the charge, your lead export history and the Export History files are written whether or not you collect the response. GET /jobs/{jobId} returns the full response (with X-Credits-Capped) for up to 60 minutes after the export finishes (sooner under heavy load or after a server restart), then 410 job_result_expired for about a day, then 404 job_not_found; the files stay in GET /export-history for 90 days either way. Use inline=false for large exports, so the response stays small. To get the result of a running export poll GET /jobs/{jobId}, never send the export again: a new export after this one finished (or with other arguments) picks new leads first and charges for them. The same Idempotency-Key returns this same job, running or finished, and an identical request while it runs does too. If the answer is lost, check GET /export-history and GET /lead-export-history first; a re-run with maxCredits 0 (without excludePurchased) returns leads you already paid for at no charge. A charge_in_progress 429 means another export, lead search or integration push of your account was still recording its charge; nothing was charged, so retry after Retry-After.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4473,6 +4585,12 @@
               "default": true
             },
             "description": "Same as the `inline` body property, for clients that prefer it on the query string. When false the response omits each file's `data` and returns `exportId` + `downloadUrl` instead. A file that could not be saved to export history keeps its `data` and has no `downloadUrl`."
+          },
+          {
+            "$ref": "#/components/parameters/JobIdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/PreferWait"
           }
         ],
         "responses": {
@@ -4566,6 +4684,9 @@
               }
             }
           },
+          "202": {
+            "$ref": "#/components/responses/JobAccepted"
+          },
           "400": {
             "description": "bad_request (for example maxLeads, maxResults or maxCredits is not a whole number in range) or export_too_large (an xlsx export that would put more than 20,000 rows in one file: a single file, a split part or the includeTotal file; the leads were already charged and recorded as received, so do not simply repeat the export - see the operation description for the no-cost re-run)",
             "content": {
@@ -4580,7 +4701,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "402": {
-            "description": "insufficient_credits (credit plans only). Requests are capped at your spendable balance, so this only happens when a concurrent request from your account spent the balance between the check and the charge. Nothing was charged; retry, or buy credits with POST /purchase-credits.",
+            "description": "insufficient_credits (credit plans only). Requests are capped at your spendable balance, so this only happens when a concurrent request from your account spent the balance between the check and the charge. Nothing was charged, and this answer does not use up the Idempotency-Key: retry, with the same key or a new one, after buying credits with POST /purchase-credits if needed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4597,11 +4718,105 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
+          "409": {
+            "description": "idempotency_key_reused: this Idempotency-Key was already used with a different request on this endpoint. Use a new key for a new request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "idempotencyKeyReused": {
+                    "summary": "Idempotency-Key reused",
+                    "value": {
+                      "error": "idempotency_key_reused",
+                      "message": "This Idempotency-Key was already used for a different request. Use a new key for a new request."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "$ref": "#/components/responses/JobResultExpired"
+          },
           "429": {
-            "$ref": "#/components/responses/RateLimitedOrLeadQueryBusy"
+            "description": "Too many requests, for one of 4 reasons. (1) a rate limit was exceeded (error 'Rate limit exceeded', with a retryAfter field equal to the Retry-After header). (2) lead search capacity is busy (error 'lead_query_capacity_busy', Retry-After: 10). (3) too many long-running requests are running at once, for your account or on the server (error 'job_capacity_busy', Retry-After: 30). (4) another export, lead search or integration push of your account is still recording its charge and did not finish within 10 minutes (error 'charge_in_progress', Retry-After: 30). None of them charged anything. Tell them apart by the body's error field. Retry after the Retry-After delay; a 429 does not use up an Idempotency-Key, so the retry may reuse it.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 'Rate limit exceeded' 429; the other 429s show the normal count)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets, as an ISO 8601 date-time (for example 2026-10-07T14:05:00.000Z)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RateLimitError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
+                },
+                "examples": {
+                  "rateLimited": {
+                    "summary": "Rate limit exceeded",
+                    "value": {
+                      "error": "Rate limit exceeded",
+                      "message": "API rate limit exceeded. Please slow down your requests.",
+                      "retryAfter": 42
+                    }
+                  },
+                  "leadQueryCapacityBusy": {
+                    "summary": "Lead search capacity busy",
+                    "value": {
+                      "error": "lead_query_capacity_busy",
+                      "message": "Lead search capacity is currently busy. Retry after the indicated delay, or narrow your filters so each query returns faster."
+                    }
+                  },
+                  "jobCapacityBusy": {
+                    "summary": "Too many long-running requests",
+                    "value": {
+                      "error": "job_capacity_busy",
+                      "message": "The server is busy with other long-running requests. Retry after the indicated delay."
+                    }
+                  },
+                  "chargeInProgress": {
+                    "summary": "Another charge is being recorded",
+                    "value": {
+                      "error": "charge_in_progress",
+                      "message": "Another export or push for your account is still being recorded. Please try again in a minute."
+                    }
+                  }
+                }
+              }
+            }
           },
           "500": {
-            "description": "internal_error. The export may have been partly processed (credits charged and leads recorded as received), so check GET /export-history and creditsRemaining with GET /me before retrying. A retry is not charged again for leads already recorded as received, but it can charge for other new leads, so check first.",
+            "description": "internal_error. The export may have been partly processed (credits charged and leads recorded as received), so check GET /export-history and creditsRemaining with GET /me before retrying. A retry is not charged again for leads already recorded as received, but it can charge for other new leads, so check first. Also error job_timeout when an export is still running after 6 hours (its files appear in GET /export-history if it completes), and result_too_large when a response collected with GET /jobs/{jobId} was too large to keep (download the files from GET /export-history). With the same Idempotency-Key, a retry returns this same answer instead of exporting again; a new key runs a new export.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6049,7 +6264,15 @@
         ],
         "operationId": "reExportLeadHistory",
         "summary": "Re-export leads from stored snapshots",
-        "description": "Re-export previously exported leads using the stored snapshot data. No live data refresh occurs. No credits charged. All selected IDs must be from the same database type. Up to 5,000 tracking ids per request. Counts toward the 5 per minute export rate limit. Always returns a single file (export format file splitting is not applied).",
+        "description": "Re-export previously exported leads using the stored snapshot data. No live data refresh occurs. No credits charged. All selected IDs must be from the same database type. Up to 5,000 tracking ids per request. Counts toward the 5 per minute export rate limit. Always returns a single file (export format file splitting is not applied). Repeated tracking ids are exported once.\n\nLong-running request: it answers exactly as described here when the work finishes within about 75 seconds (or within the wait you set with the Prefer header); otherwise it answers 202 Accepted with a jobId. Poll GET /jobs/{jobId}, which then returns exactly this response. Send an Idempotency-Key header so that a retry after a timeout returns the same job instead of running the request again (see the Background Jobs tag). After a 202 the file is kept for pickup with GET /jobs/{jobId} for up to 60 minutes after it is ready; it is never saved to Export History. After that, run the re-export again; it is free.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobIdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/PreferWait"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -6100,6 +6323,9 @@
               }
             }
           },
+          "202": {
+            "$ref": "#/components/responses/JobAccepted"
+          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
@@ -6112,8 +6338,102 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "description": "idempotency_key_reused: this Idempotency-Key was already used with a different request on this endpoint. Use a new key for a new request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "idempotencyKeyReused": {
+                    "summary": "Idempotency-Key reused",
+                    "value": {
+                      "error": "idempotency_key_reused",
+                      "message": "This Idempotency-Key was already used for a different request. Use a new key for a new request."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "$ref": "#/components/responses/JobResultExpired"
+          },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "Too many requests, for one of 2 reasons. (1) a rate limit was exceeded (error 'Rate limit exceeded', with a retryAfter field equal to the Retry-After header). (2) too many long-running requests are running at once, for your account or on the server (error 'job_capacity_busy', Retry-After: 30). Nothing was run. Tell them apart by the body's error field. Retry after the Retry-After delay; a 429 does not use up an Idempotency-Key, so the retry may reuse it.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 'Rate limit exceeded' 429; the other 429s show the normal count)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets, as an ISO 8601 date-time (for example 2026-10-07T14:05:00.000Z)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RateLimitError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
+                },
+                "examples": {
+                  "rateLimited": {
+                    "summary": "Rate limit exceeded",
+                    "value": {
+                      "error": "Rate limit exceeded",
+                      "message": "API rate limit exceeded. Please slow down your requests.",
+                      "retryAfter": 42
+                    }
+                  },
+                  "jobCapacityBusy": {
+                    "summary": "Too many long-running requests",
+                    "value": {
+                      "error": "job_capacity_busy",
+                      "message": "The server is busy with other long-running requests. Retry after the indicated delay."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error ('Failed to generate export file' or 'Failed to re-export leads'), or job_timeout when the re-export is still running after 60 minutes. No credits are charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "internal_error",
+                  "message": "Failed to generate export file"
+                }
+              }
+            }
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
@@ -6128,7 +6448,15 @@
         ],
         "operationId": "refreshLeadExportHistory",
         "summary": "Refresh lead snapshots with live data",
-        "description": "Updates stored lead snapshots with the latest data from the live database. No credits charged. Accepts either an explicit list of tracking IDs or a filter object to select all matching records. Up to 5,000 tracking ids per request (a filters selection counts too). Counts toward the 5 per minute export rate limit. A refresh that finds newer data for a lead sends lead.updated to your integrations, unless the lead is on your export blacklist. When the selection comes from filters (no trackingIds array), an invalid filters.dateFrom or filters.dateTo (not a valid date with a year from 1 to 9999) returns 400 bad_request ('filters.dateFrom must be a valid date (e.g. 2026-08-18)', or the same for filters.dateTo), and a filters.databaseType or filters.exportMethod that is not a string returns 400 bad_request ('filters.databaseType must be a string' or 'filters.exportMethod must be a string'). With a trackingIds array the filters are ignored.",
+        "description": "Updates stored lead snapshots with the latest data from the live database. No credits charged. Accepts either an explicit list of tracking IDs or a filter object to select all matching records. Up to 5,000 tracking ids per request (a filters selection counts too). Counts toward the 5 per minute export rate limit. A refresh that finds newer data for a lead sends lead.updated to your integrations, unless the lead is on your export blacklist. When the selection comes from filters (no trackingIds array), an invalid filters.dateFrom or filters.dateTo (not a valid date with a year from 1 to 9999) returns 400 bad_request ('filters.dateFrom must be a valid date (e.g. 2026-08-18)', or the same for filters.dateTo), and a filters.databaseType or filters.exportMethod that is not a string returns 400 bad_request ('filters.databaseType must be a string' or 'filters.exportMethod must be a string'). With a trackingIds array the filters are ignored. Repeated tracking ids are refreshed once.\n\nLong-running request: it answers exactly as described here when the work finishes within about 75 seconds (or within the wait you set with the Prefer header); otherwise it answers 202 Accepted with a jobId. Poll GET /jobs/{jobId}, which then returns exactly this response. Send an Idempotency-Key header so that a retry after a timeout returns the same job instead of running the request again (see the Background Jobs tag). After a 202 the refresh keeps running; its result is kept for up to 60 minutes after it finishes (then 410 job_result_expired; the refreshed snapshots stay in GET /lead-export-history).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobIdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/PreferWait"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -6226,6 +6554,9 @@
               }
             }
           },
+          "202": {
+            "$ref": "#/components/responses/JobAccepted"
+          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
@@ -6235,8 +6566,102 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
+          "409": {
+            "description": "idempotency_key_reused: this Idempotency-Key was already used with a different request on this endpoint. Use a new key for a new request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "idempotencyKeyReused": {
+                    "summary": "Idempotency-Key reused",
+                    "value": {
+                      "error": "idempotency_key_reused",
+                      "message": "This Idempotency-Key was already used for a different request. Use a new key for a new request."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "$ref": "#/components/responses/JobResultExpired"
+          },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "Too many requests, for one of 2 reasons. (1) a rate limit was exceeded (error 'Rate limit exceeded', with a retryAfter field equal to the Retry-After header). (2) too many long-running requests are running at once, for your account or on the server (error 'job_capacity_busy', Retry-After: 30). Nothing was refreshed. Tell them apart by the body's error field. Retry after the Retry-After delay; a 429 does not use up an Idempotency-Key, so the retry may reuse it.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 'Rate limit exceeded' 429; the other 429s show the normal count)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets, as an ISO 8601 date-time (for example 2026-10-07T14:05:00.000Z)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RateLimitError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
+                },
+                "examples": {
+                  "rateLimited": {
+                    "summary": "Rate limit exceeded",
+                    "value": {
+                      "error": "Rate limit exceeded",
+                      "message": "API rate limit exceeded. Please slow down your requests.",
+                      "retryAfter": 42
+                    }
+                  },
+                  "jobCapacityBusy": {
+                    "summary": "Too many long-running requests",
+                    "value": {
+                      "error": "job_capacity_busy",
+                      "message": "The server is busy with other long-running requests. Retry after the indicated delay."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error, or job_timeout when the refresh is still running after 2 hours. No credits are charged; check the entries with GET /lead-export-history before refreshing them again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "internal_error",
+                  "message": "Failed to refresh lead export history"
+                }
+              }
+            }
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
@@ -6251,7 +6676,15 @@
         ],
         "operationId": "refreshAndExportLeadHistory",
         "summary": "Refresh snapshots and export as file",
-        "description": "Refreshes stored lead snapshots with live data then immediately exports them as a downloadable file. All selected IDs must be from the same database type. No credits charged. Accepts either trackingIds or a filters object. Up to 5,000 tracking ids per request (a filters selection counts too). Counts toward the 5 per minute export rate limit. Always returns a single file (export format file splitting is not applied). Everything is checked before any entry changes: a 400 or 404 response leaves the entries unchanged (snapshots, leadLastUpdated and lastChangedFields). A successful call refreshes the snapshots and clears lastChangedFields on the selected entries. A refresh that finds newer data for a lead sends lead.updated to your integrations, unless the lead is on your export blacklist. When the selection comes from filters (no trackingIds array), an invalid filters.dateFrom or filters.dateTo (not a valid date with a year from 1 to 9999) returns 400 bad_request ('filters.dateFrom must be a valid date (e.g. 2026-08-18)', or the same for filters.dateTo), and a filters.databaseType or filters.exportMethod that is not a string returns 400 bad_request ('filters.databaseType must be a string' or 'filters.exportMethod must be a string'). With a trackingIds array the filters are ignored.",
+        "description": "Refreshes stored lead snapshots with live data then immediately exports them as a downloadable file. All selected IDs must be from the same database type. No credits charged. Accepts either trackingIds or a filters object. Up to 5,000 tracking ids per request (a filters selection counts too). Counts toward the 5 per minute export rate limit. Always returns a single file (export format file splitting is not applied). Everything is checked before any entry changes: a 400 or 404 response leaves the entries unchanged (snapshots, leadLastUpdated and lastChangedFields). A successful call refreshes the snapshots and clears lastChangedFields on the selected entries. A refresh that finds newer data for a lead sends lead.updated to your integrations, unless the lead is on your export blacklist. When the selection comes from filters (no trackingIds array), an invalid filters.dateFrom or filters.dateTo (not a valid date with a year from 1 to 9999) returns 400 bad_request ('filters.dateFrom must be a valid date (e.g. 2026-08-18)', or the same for filters.dateTo), and a filters.databaseType or filters.exportMethod that is not a string returns 400 bad_request ('filters.databaseType must be a string' or 'filters.exportMethod must be a string'). With a trackingIds array the filters are ignored. Repeated tracking ids are refreshed and exported once.\n\nLong-running request: it answers exactly as described here when the work finishes within about 75 seconds (or within the wait you set with the Prefer header); otherwise it answers 202 Accepted with a jobId. Poll GET /jobs/{jobId}, which then returns exactly this response. Send an Idempotency-Key header so that a retry after a timeout returns the same job instead of running the request again (see the Background Jobs tag). After a 202 the file is kept for pickup with GET /jobs/{jobId} for up to 60 minutes after it is ready; it is never saved to Export History. The snapshots are refreshed when the job finishes; lastChangedFields are cleared only when the file is delivered to you (in this response or by GET /jobs/{jobId}), so a file you never collect leaves them set. After the 60 minutes, run this request again (it is free) or get the same rows free with POST /lead-export-history/re-export.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobIdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/PreferWait"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -6321,6 +6754,9 @@
               }
             }
           },
+          "202": {
+            "$ref": "#/components/responses/JobAccepted"
+          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
@@ -6333,8 +6769,102 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "description": "idempotency_key_reused: this Idempotency-Key was already used with a different request on this endpoint. Use a new key for a new request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "idempotencyKeyReused": {
+                    "summary": "Idempotency-Key reused",
+                    "value": {
+                      "error": "idempotency_key_reused",
+                      "message": "This Idempotency-Key was already used for a different request. Use a new key for a new request."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "$ref": "#/components/responses/JobResultExpired"
+          },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "Too many requests, for one of 2 reasons. (1) a rate limit was exceeded (error 'Rate limit exceeded', with a retryAfter field equal to the Retry-After header). (2) too many long-running requests are running at once, for your account or on the server (error 'job_capacity_busy', Retry-After: 30). Nothing was refreshed. Tell them apart by the body's error field. Retry after the Retry-After delay; a 429 does not use up an Idempotency-Key, so the retry may reuse it.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 'Rate limit exceeded' 429; the other 429s show the normal count)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets, as an ISO 8601 date-time (for example 2026-10-07T14:05:00.000Z)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RateLimitError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
+                },
+                "examples": {
+                  "rateLimited": {
+                    "summary": "Rate limit exceeded",
+                    "value": {
+                      "error": "Rate limit exceeded",
+                      "message": "API rate limit exceeded. Please slow down your requests.",
+                      "retryAfter": 42
+                    }
+                  },
+                  "jobCapacityBusy": {
+                    "summary": "Too many long-running requests",
+                    "value": {
+                      "error": "job_capacity_busy",
+                      "message": "The server is busy with other long-running requests. Retry after the indicated delay."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error ('Failed to generate export file' or 'Failed to refresh and export leads'), or job_timeout when the job is still running after 2 hours. No credits are charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "internal_error",
+                  "message": "Failed to generate export file"
+                }
+              }
+            }
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
@@ -6411,7 +6941,15 @@
         ],
         "operationId": "suggestCategories",
         "summary": "AI category suggestions",
-        "description": "Get AI-powered SMB category suggestions based on your company profile. Optionally analyzes your company website for better results. Rate limited to 5 requests per minute.",
+        "description": "Get AI-powered SMB category suggestions based on your company profile. Optionally analyzes your company website for better results. Rate limited to 5 requests per minute.\n\nLong-running request: it answers exactly as described here when the work finishes within about 75 seconds (or within the wait you set with the Prefer header); otherwise it answers 202 Accepted with a jobId. Poll GET /jobs/{jobId}, which then returns exactly this response. Send an Idempotency-Key header so that a retry after a timeout returns the same job instead of running the request again (see the Background Jobs tag). Nothing is charged. After a 202, the suggestions are kept for up to 60 minutes after they finish (then 410 job_result_expired for about a day, later 404 job_not_found: run the request again, it is free).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobIdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/PreferWait"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -6484,6 +7022,9 @@
               }
             }
           },
+          "202": {
+            "$ref": "#/components/responses/JobAccepted"
+          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
@@ -6493,8 +7034,102 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
+          "409": {
+            "description": "idempotency_key_reused: this Idempotency-Key was already used with a different request on this endpoint. Use a new key for a new request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "idempotencyKeyReused": {
+                    "summary": "Idempotency-Key reused",
+                    "value": {
+                      "error": "idempotency_key_reused",
+                      "message": "This Idempotency-Key was already used for a different request. Use a new key for a new request."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "$ref": "#/components/responses/JobResultExpired"
+          },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "Too many requests, for one of 2 reasons. (1) a rate limit was exceeded (error 'Rate limit exceeded', with a retryAfter field equal to the Retry-After header). (2) too many long-running requests are running at once, for your account or on the server (error 'job_capacity_busy', Retry-After: 30). Nothing was run. Tell them apart by the body's error field. Retry after the Retry-After delay; a 429 does not use up an Idempotency-Key, so the retry may reuse it.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 'Rate limit exceeded' 429; the other 429s show the normal count)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets, as an ISO 8601 date-time (for example 2026-10-07T14:05:00.000Z)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RateLimitError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
+                },
+                "examples": {
+                  "rateLimited": {
+                    "summary": "Rate limit exceeded",
+                    "value": {
+                      "error": "Rate limit exceeded",
+                      "message": "API rate limit exceeded. Please slow down your requests.",
+                      "retryAfter": 42
+                    }
+                  },
+                  "jobCapacityBusy": {
+                    "summary": "Too many long-running requests",
+                    "value": {
+                      "error": "job_capacity_busy",
+                      "message": "The server is busy with other long-running requests. Retry after the indicated delay."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error: the suggestions could not be generated, or job_timeout when they took longer than 15 minutes. Nothing is charged, so it is safe to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "internal_error",
+                  "message": "Failed to generate category suggestions"
+                }
+              }
+            }
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
@@ -7926,7 +8561,7 @@
         ],
         "operationId": "triggerEmailSchedule",
         "summary": "Manually trigger an email schedule",
-        "description": "Manually trigger an active email schedule to send immediately. Counts toward the 5 per minute export rate limit. A paused schedule returns 400. A 200 does not always mean an email went out: when nothing new matches, nothing is sent; with no credits left to spend, only leads you already received (which are free) are sent, and if every match is a new lead nothing is sent and your schedules pause.",
+        "description": "Manually trigger an active email schedule to send immediately. Counts toward the 5 per minute export rate limit. A paused schedule returns 400. A 200 does not always mean an email went out: when nothing new matches, nothing is sent; with no credits left to spend, only leads you already received (which are free) are sent, and if every match is a new lead nothing is sent and your schedules pause.\n\nLong-running request: it answers exactly as described here when the work finishes within about 75 seconds (or within the wait you set with the Prefer header); otherwise it answers 202 Accepted with a jobId. Poll GET /jobs/{jobId}, which then returns exactly this response. Send an Idempotency-Key header so that a retry after a timeout returns the same job instead of running the request again (see the Background Jobs tag).\n\n**Retrying without sending twice.** The send keeps running after a 202, and its answer is kept for up to 24 hours. Repeating the request with the same Idempotency-Key returns the same send instead of sending again (the key is kept with the job for up to about 48 hours; a server restart forgets it, so then check lastSent in GET /email-schedules first), and triggering the same schedule while a trigger of it is still running returns that running job. If the schedule's regular run is sending it at that moment, the answer is 409 schedule_run_in_progress and this request sent nothing.",
         "parameters": [
           {
             "name": "id",
@@ -7935,6 +8570,12 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "$ref": "#/components/parameters/JobIdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/PreferWait"
           }
         ],
         "responses": {
@@ -7961,6 +8602,9 @@
               }
             }
           },
+          "202": {
+            "$ref": "#/components/responses/JobAccepted"
+          },
           "400": {
             "description": "bad_request: invalid schedule id, or the schedule is paused",
             "content": {
@@ -7980,11 +8624,105 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "description": "schedule_run_in_progress: the schedule's regular run is sending it right now, so this request sent nothing and the Idempotency-Key is not used up (check lastSent in GET /email-schedules when it finishes and trigger it again only if needed); or idempotency_key_reused: this Idempotency-Key was already used with a different request on this endpoint. Use a new key for a new request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "scheduleRunInProgress": {
+                    "summary": "The schedule is being sent by its regular run",
+                    "value": {
+                      "error": "schedule_run_in_progress",
+                      "message": "This schedule is being sent right now by its regular schedule. When it finishes, check lastSent in GET /api/v1/email-schedules and trigger it again only if needed."
+                    }
+                  },
+                  "idempotencyKeyReused": {
+                    "summary": "Idempotency-Key reused",
+                    "value": {
+                      "error": "idempotency_key_reused",
+                      "message": "This Idempotency-Key was already used for a different request. Use a new key for a new request."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "$ref": "#/components/responses/JobResultExpired"
+          },
           "429": {
-            "$ref": "#/components/responses/RateLimitedOrLeadQueryBusy"
+            "description": "Too many requests, for one of 3 reasons. (1) a rate limit was exceeded (error 'Rate limit exceeded', with a retryAfter field equal to the Retry-After header). (2) lead search capacity is busy (error 'lead_query_capacity_busy', Retry-After: 10). (3) too many long-running requests are running at once, for your account or on the server (error 'job_capacity_busy', Retry-After: 30). None of them sent anything. Tell them apart by the body's error field. Retry after the Retry-After delay; a 429 does not use up an Idempotency-Key, so the retry may reuse it.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests allowed in the window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Requests left in the window (0 on a 'Rate limit exceeded' 429; the other 429s show the normal count)"
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": "When the window resets, as an ISO 8601 date-time (for example 2026-10-07T14:05:00.000Z)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RateLimitError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
+                },
+                "examples": {
+                  "rateLimited": {
+                    "summary": "Rate limit exceeded",
+                    "value": {
+                      "error": "Rate limit exceeded",
+                      "message": "API rate limit exceeded. Please slow down your requests.",
+                      "retryAfter": 42
+                    }
+                  },
+                  "leadQueryCapacityBusy": {
+                    "summary": "Lead search capacity busy",
+                    "value": {
+                      "error": "lead_query_capacity_busy",
+                      "message": "Lead search capacity is currently busy. Retry after the indicated delay."
+                    }
+                  },
+                  "jobCapacityBusy": {
+                    "summary": "Too many long-running requests",
+                    "value": {
+                      "error": "job_capacity_busy",
+                      "message": "The server is busy with other long-running requests. Retry after the indicated delay."
+                    }
+                  }
+                }
+              }
+            }
           },
           "500": {
-            "description": "internal_error. Do not retry blindly: the email may already have been sent and charged. Check the schedule's lastSent with GET /email-schedules first.",
+            "description": "internal_error. Do not retry blindly: the email may already have been sent and charged. Check the schedule's lastSent with GET /email-schedules first. With the same Idempotency-Key, a retry returns this same answer instead of sending again (for 24 hours, then 410 job_result_expired for about a day, still without sending). A send still running after 6 hours answers 500 job_timeout: check lastSent and totalSentCount before triggering it again.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8273,6 +9011,178 @@
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Background Jobs"
+        ],
+        "operationId": "getJob",
+        "summary": "Get the result of a long-running request",
+        "description": "Follow a request that answered 202 Accepted. While the job runs this answers 202 again (same body as the original 202, with fresh phase, progress and elapsedMs). Once it has finished it answers exactly what the original request would have returned: the same status code, the same headers (Content-Type, Content-Disposition, X-Credits-Capped, Retry-After) and the same body, including an error answer, plus X-SMBSB-Job-Id and X-SMBSB-Job-Status. Any API key of the same account can poll. Results are normally kept 60 minutes after the job finishes (24 hours for an email schedule trigger) and can be dropped sooner under heavy load or after a server restart. After that this answers 410 job_result_expired for about a day, with a message that says where to look (exports: the files are in GET /export-history for 90 days and the leads in GET /lead-export-history; files from the Lead Export History endpoints: run the free re-export; schedule sends: lastSent in GET /email-schedules), and then 404 job_not_found. Never repeat an export or a schedule trigger then: check what it already did first. Polls count toward the normal rate limit of 600 requests per minute per key.",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            "description": "The jobId from a 202 answer (also in its Location and X-SMBSB-Job-Id headers)"
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^wait=[0-9]+$"
+            },
+            "description": "wait=N (0-60 seconds): wait up to N seconds, counted from when this poll arrived, for the job to finish before answering 202 again (a long poll). Default: answer at once."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job finished: the original request's answer, replayed byte for byte (its status code may be any success code; JSON or a file such as CSV or XLSX).",
+            "headers": {
+              "X-SMBSB-Job-Id": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                },
+                "description": "The background job id"
+              },
+              "X-SMBSB-Job-Status": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "completed",
+                    "failed"
+                  ]
+                },
+                "description": "completed (the original answer was a success) or failed (the original answer was an error)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The original request's JSON body",
+                  "additionalProperties": true
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "202": {
+            "$ref": "#/components/responses/JobAccepted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "job_not_found: no job with this id for your account: a malformed id, another account's job, a job that finished more than about a day ago, or a job a server restart interrupted. Check what it already did before running anything again (exports: GET /export-history and GET /lead-export-history; schedule sends: lastSent in GET /email-schedules).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "job_not_found",
+                  "message": "No background job with this id for your account: the id is unknown, the job finished more than a day ago, or a server restart interrupted it. Before running anything again, check what it already did: exports in GET /api/v1/export-history and /api/v1/lead-export-history (a re-run with maxCredits 0 returns leads you already paid for at no charge), schedule sends in lastSent of GET /api/v1/email-schedules."
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "job_result_expired: the job finished, but its answer is no longer kept (normally 60 minutes after it finished, 24 hours for a schedule trigger; sooner under heavy load). Answered for about a day, then 404 job_not_found. The message says where to look for that kind of request; do not simply repeat the request.",
+            "headers": {
+              "X-SMBSB-Job-Id": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                },
+                "description": "The background job id"
+              },
+              "X-SMBSB-Job-Status": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "expired"
+                  ]
+                },
+                "description": "expired"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "export": {
+                    "summary": "An export",
+                    "value": {
+                      "error": "job_result_expired",
+                      "message": "This export's answer is no longer kept (answers are kept up to 60 minutes after the export finishes). Do not repeat the export: a new export picks new leads first and charges for them. Check what it did first: its files are in GET /api/v1/export-history (kept 90 days) and its leads in GET /api/v1/lead-export-history; a re-run with maxCredits 0 (without excludePurchased) returns leads you already paid for at no charge."
+                    }
+                  },
+                  "scheduleTrigger": {
+                    "summary": "A schedule trigger",
+                    "value": {
+                      "error": "job_result_expired",
+                      "message": "This send's answer is no longer kept (answers are kept up to 24 hours after the send finishes). Do not trigger the schedule again blindly: check lastSent and totalSentCount in GET /api/v1/email-schedules first, and trigger it again only if this send did not go out."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "default": {
+            "description": "The job finished with an error: the original request's error answer, replayed (for example 400 bad_request, 402 insufficient_credits, 409, 429 or 500), with X-SMBSB-Job-Status: failed.",
+            "headers": {
+              "X-SMBSB-Job-Id": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{32}$"
+                },
+                "description": "The background job id"
+              },
+              "X-SMBSB-Job-Status": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "completed",
+                    "failed"
+                  ]
+                },
+                "description": "completed (the original answer was a success) or failed (the original answer was an error)"
+              }
+            }
           }
         }
       }
@@ -10606,6 +11516,88 @@
             }
           }
         }
+      },
+      "JobAccepted": {
+        "type": "object",
+        "description": "Body of a 202 Accepted answer: the request is still running in the background. It is the same from the original request and from GET /jobs/{jobId}.",
+        "required": [
+          "jobId",
+          "status",
+          "statusUrl"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$",
+            "description": "The background job (32 hex characters). Also in the Location and X-SMBSB-Job-Id headers."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running"
+            ],
+            "description": "Always running in a 202 answer. A finished job answers with the original request's status instead."
+          },
+          "kind": {
+            "type": "string",
+            "description": "What is running, for example api_leads_export"
+          },
+          "phase": {
+            "type": "string",
+            "description": "The current step, for example waiting_for_capacity, searching, charging, building_file or saving (exports), sending (schedule triggers), analyzing_website or suggesting (category suggestions), checking, refreshing or loading (Lead Export History)"
+          },
+          "progress": {
+            "type": "object",
+            "nullable": true,
+            "description": "Progress so far, when the work reports it (null otherwise)",
+            "properties": {
+              "done": {
+                "type": "integer",
+                "description": "Items done so far"
+              },
+              "total": {
+                "type": "integer",
+                "nullable": true,
+                "description": "Items in total, or null while not known yet"
+              },
+              "label": {
+                "type": "string",
+                "description": "What is being counted, for example Loading leads"
+              }
+            }
+          },
+          "elapsedMs": {
+            "type": "integer",
+            "description": "Milliseconds since the job started"
+          },
+          "statusUrl": {
+            "type": "string",
+            "description": "Where to poll: /api/v1/jobs/{jobId} (same API key; any key of the same account works)"
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "description": "Suggested seconds to wait before the next poll (also the Retry-After header)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable explanation of what to do next"
+          }
+        },
+        "example": {
+          "jobId": "3f2a9c1e5b7d4a608e1f2c3b4d5e6f70",
+          "status": "running",
+          "kind": "api_leads_export",
+          "phase": "searching",
+          "progress": {
+            "done": 2000,
+            "total": 7000,
+            "label": "Loading leads"
+          },
+          "elapsedMs": 75012,
+          "statusUrl": "/api/v1/jobs/3f2a9c1e5b7d4a608e1f2c3b4d5e6f70",
+          "retryAfterSeconds": 5,
+          "message": "Still working in the background. GET statusUrl with the same API key until it no longer answers 202; it then returns exactly what this request would have returned (kept up to 60 minutes after the job finishes, 24 hours for a schedule send). Poll statusUrl instead of repeating this request: a repeat with the same Idempotency-Key header returns this same job, a repeat without one may run the work again."
+        }
       }
     },
     "parameters": {
@@ -12085,6 +13077,26 @@
           ]
         },
         "description": "Empty/non-empty filter on Tier 6 Emails list."
+      },
+      "JobIdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{8,64}$"
+        },
+        "description": "Optional, 8-64 characters (letters, numbers, underscore, dash). Repeating the request with the same key never runs it again: it returns the running job, its stored answer, or 410 job_result_expired once that answer is no longer kept. The key stays with the job for up to about 25 hours after it finished (about 48 hours for POST /email-schedules/{id}/trigger); a server restart forgets it. An answer of 409, 429 or 503 (and 402 insufficient_credits on POST /leads/export) does not use up the key, so a retry with it runs the request. Every other answer comes back again for the same key: after an error answer, or when you change any argument, use a new key; the same key with a different request answers 409 idempotency_key_reused. A key that does not match the pattern answers 400 bad_request and nothing runs."
+      },
+      "PreferWait": {
+        "name": "Prefer",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "pattern": "^(wait=[0-9]+|respond-async)$"
+        },
+        "description": "How long to wait for the work before answering, counted from when the request arrived. wait=N (0-75 seconds; larger values count as 75): answer with the finished result if it is done within N seconds of arrival, otherwise 202 Accepted with a jobId. respond-async: answer 202 Accepted at once. Default: wait up to 75 seconds (less when the request itself took long to arrive). Either way the answer starts within about 90 seconds of arrival. A Preference-Applied header echoes the preference that was honored. Use a shorter wait when your HTTP client times out before 75 seconds."
       }
     },
     "headers": {
@@ -12306,6 +13318,105 @@
                       "type": "string"
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      },
+      "JobAccepted": {
+        "description": "Accepted: still running in the background. Poll GET /jobs/{jobId} (the Location header) with the same API key until it no longer answers 202; it then returns exactly what this request would have returned. Retrying this request with the same Idempotency-Key header returns the same job instead of running it again.",
+        "headers": {
+          "Location": {
+            "schema": {
+              "type": "string"
+            },
+            "description": "Where to poll: /api/v1/jobs/{jobId}"
+          },
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds to wait before the next poll"
+          },
+          "X-SMBSB-Job-Id": {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            "description": "The background job id"
+          },
+          "X-SMBSB-Job-Status": {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "running"
+              ]
+            },
+            "description": "running"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/JobAccepted"
+            },
+            "example": {
+              "jobId": "3f2a9c1e5b7d4a608e1f2c3b4d5e6f70",
+              "status": "running",
+              "kind": "api_leads_export",
+              "phase": "searching",
+              "progress": {
+                "done": 2000,
+                "total": 7000,
+                "label": "Loading leads"
+              },
+              "elapsedMs": 75012,
+              "statusUrl": "/api/v1/jobs/3f2a9c1e5b7d4a608e1f2c3b4d5e6f70",
+              "retryAfterSeconds": 5,
+              "message": "Still working in the background. GET statusUrl with the same API key until it no longer answers 202; it then returns exactly what this request would have returned (kept up to 60 minutes after the job finishes, 24 hours for a schedule send). Poll statusUrl instead of repeating this request: a repeat with the same Idempotency-Key header returns this same job, a repeat without one may run the work again."
+            }
+          }
+        }
+      },
+      "JobResultExpired": {
+        "description": "job_result_expired: this Idempotency-Key belongs to a job that already finished, and its answer is no longer kept (normally 60 minutes after it finished, 24 hours for a schedule trigger; sooner under heavy load). Nothing was run again. Answered for about a day; the message says where to look (for an export: GET /export-history and GET /lead-export-history; for a schedule trigger: lastSent in GET /email-schedules), so do not simply repeat the request with a new key.",
+        "headers": {
+          "X-SMBSB-Job-Id": {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            "description": "The background job id"
+          },
+          "X-SMBSB-Job-Status": {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "expired"
+              ]
+            },
+            "description": "expired"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "export": {
+                "summary": "An export",
+                "value": {
+                  "error": "job_result_expired",
+                  "message": "This export's answer is no longer kept (answers are kept up to 60 minutes after the export finishes). Do not repeat the export: a new export picks new leads first and charges for them. Check what it did first: its files are in GET /api/v1/export-history (kept 90 days) and its leads in GET /api/v1/lead-export-history; a re-run with maxCredits 0 (without excludePurchased) returns leads you already paid for at no charge."
+                }
+              },
+              "scheduleTrigger": {
+                "summary": "A schedule trigger",
+                "value": {
+                  "error": "job_result_expired",
+                  "message": "This send's answer is no longer kept (answers are kept up to 24 hours after the send finishes). Do not trigger the schedule again blindly: check lastSent and totalSentCount in GET /api/v1/email-schedules first, and trigger it again only if this send did not go out."
                 }
               }
             }

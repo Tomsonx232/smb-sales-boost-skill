@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SMB Sales Boost API client - part of the smb-sales-boost agent skill (v1.9.5).
+SMB Sales Boost API client - part of the smb-sales-boost agent skill (v1.9.6).
 
 One dependency-free command (Python 3.8+ standard library only) for every
 SMB Sales Boost REST API call. It handles authentication, parameter encoding,
@@ -42,9 +42,16 @@ Options
   --out NAME           also save the full JSON response as NAME.json in the
                        output folder (useful for large lead searches)
   --compact            print lead results as a short summary of key fields
-  --idempotency-key K  for POST /purchase-credits: reuse the key printed by a
-                       call that timed out; Stripe does not charge the same key
-                       twice for about 24 hours
+  --idempotency-key K  reuse the key printed by a call that timed out. For
+                       POST /purchase-credits Stripe does not charge the same key
+                       twice for about 24 hours; for the long-running calls below
+                       the server returns the same job instead of running it again
+  --async              long-running calls: ask the server to answer 202 with a
+                       jobId at once, and print it instead of following it
+  --no-wait            long-running calls: do not follow a 202 answer; print the
+                       jobId (follow it later with GET /jobs/<jobId>)
+  --job-timeout SEC    how long to follow a 202 answer before printing the jobId
+                       instead (default 3600)
   --timeout SEC        network timeout in seconds (default 180)
   --no-retry           do not retry after 429 or 503 responses (calls that
                        change or send through an integration are never
@@ -83,6 +90,23 @@ Integrations
   returned when a webhook integration is created is shown only once: hand it
   to the user and do not log or save it.
 
+Long-running calls
+  POST /leads/export, POST /email-schedules/{id}/trigger,
+  POST /ai/suggest-categories and POST /lead-export-history/refresh,
+  /refresh-and-export and /re-export run as background jobs on the server.
+  They answer as usual when the work finishes within about 75 seconds;
+  otherwise the server answers 202 with a jobId, and this script follows it
+  (GET /jobs/<jobId>, up to 50 seconds per poll, progress on stderr) and then
+  handles the final answer exactly like the original call, so files are saved
+  the same way. Each of these calls sends an Idempotency-Key (printed on
+  stderr): if a call times out, re-run it with --idempotency-key <key> and the
+  server returns the same job instead of exporting or sending again (the key
+  is kept with the job for up to about 25 hours after it finishes, about 48
+  hours for a schedule trigger; a server restart forgets it). Only a 409, 429
+  or 503 answer, or an export's 402, frees the key: after any other error, or
+  with changed arguments, run without --idempotency-key so a new key is sent.
+  GET /jobs/<jobId> can also be called directly.
+
 Retries
   A 429 or 503 with a Retry-After of 60 seconds or less is retried (up to 3
   attempts), except for calls that change or send through an integration
@@ -90,9 +114,11 @@ Retries
   so the agent checks GET /integrations or the delivery log before repeating.
 
 Exit codes
-  0 success, 1 API error (or an unexpected client error), 2 usage error or
-  confirmation required (nothing sent), 3 network error or timeout,
-  4 local file error (checked before anything is sent)
+  0 success (also a long-running call that is still running when it is not
+  followed: --async, --no-wait or --job-timeout), 1 API error (or an
+  unexpected client error), 2 usage error or confirmation required (nothing
+  sent), 3 network error or timeout, 4 local file error (checked before
+  anything is sent)
 """
 
 import argparse
@@ -109,7 +135,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "1.9.5"
+__version__ = "1.9.6"
 
 API_ORIGIN = "https://smbsalesboost.com"
 API_PREFIX = "/api/v1"
@@ -164,6 +190,7 @@ COMPACT_FIELDS = (
 HEADERS_TO_REPORT = (
     "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
     "Retry-After", "X-Credits-Capped", "X-Lead-Query-Path",
+    "X-SMBSB-Job-Id", "X-SMBSB-Job-Status",
 )
 
 EXPORT_RE = re.compile(r"/leads/export")
@@ -184,6 +211,19 @@ INTEGRATION_DESTINATION_KEYS = ("subscriptions", "defaultTargetUrl", "pipedriveD
 INTEGRATION_RATE_LIMITS = "60 integration requests per minute per account, 30 per minute for connect"
 LEADS_DEFAULT_LIMIT = 100
 LEADS_MAX_LIMIT = 1000
+# Long-running calls (background jobs on the server, 2026-10-14). The trigger and the export
+# are matched by TRIGGER_RE / EXPORT_RE; GET /jobs/<jobId> follows a 202 answer.
+JOB_ROUTE_PATHS = (
+    "/ai/suggest-categories", "/lead-export-history/refresh",
+    "/lead-export-history/refresh-and-export", "/lead-export-history/re-export",
+)
+JOB_STATUS_RE = re.compile(r"/jobs/([a-f0-9]{32})")
+JOB_ID_RE = re.compile(r"[a-f0-9]{32}")
+SERVER_JOB_WAIT_SECONDS = 75
+JOB_POLL_WAIT_SECONDS = 50
+JOB_POLL_MIN_TIMEOUT = 70
+DEFAULT_JOB_TIMEOUT = 3600
+JOB_POLL_MAX_NETWORK_FAILURES = 3
 
 
 class UsageError(Exception):
@@ -548,6 +588,32 @@ def normalize_export_body(body, notes):
     return body
 
 
+def is_job_route(method, path):
+    """Calls the server runs as a background job (202 + jobId when they take longer than about 75 s)."""
+    return method == "POST" and bool(EXPORT_RE.fullmatch(path) or TRIGGER_RE.fullmatch(path)
+                                      or path in JOB_ROUTE_PATHS)
+
+
+def job_key_kept(path):
+    """How long, at most, the server keeps an Idempotency-Key of this long-running call with its job."""
+    return "about 48 hours" if TRIGGER_RE.fullmatch(path) else "about 25 hours"
+
+
+def job_prefer_header(args, method, path):
+    """The Prefer header for a long-running call or a GET /jobs/<jobId>, or None."""
+    if is_job_route(method, path):
+        if args.respond_async:
+            return "respond-async"
+        # The server waits up to 75 s by default; ask for less when --timeout would cut that wait.
+        wait = int(args.timeout) - 10
+        if wait < SERVER_JOB_WAIT_SECONDS:
+            return "wait=%d" % max(0, wait)
+        return None
+    if method == "GET" and JOB_STATUS_RE.fullmatch(path) and not (args.respond_async or args.no_wait):
+        return "wait=%d" % max(0, min(JOB_POLL_WAIT_SECONDS, int(args.timeout) - 10))
+    return None
+
+
 # --------------------------------------------------------------------------
 # Safety rules
 # --------------------------------------------------------------------------
@@ -736,7 +802,28 @@ def is_integration_change(method, path):
     return method != "GET" and (path == "/integrations" or path.startswith("/integrations/"))
 
 
-def failure_advice(method, path):
+def job_retry_advice(method, path, idempotency_key):
+    """For a long-running call that timed out: the same key returns the same job instead of a repeat."""
+    if not idempotency_key or not is_job_route(method, path):
+        return None
+    return ("Safest next step: re-run the exact same command with --idempotency-key %s. The server then returns "
+            "the same job (still running, or its result) instead of running it again; it keeps the key for up to "
+            "%s after the job finishes, and a server restart forgets it." % (idempotency_key, job_key_kept(path)))
+
+
+def failure_advice(method, path, idempotency_key=None):
+    """What to do after a call failed without a usable answer (a timeout, or a non-JSON gateway error).
+
+    With the Idempotency-Key of a long-running call, re-running with that key comes first.
+    """
+    specific = _failure_advice(method, path)
+    retry = job_retry_advice(method, path, idempotency_key)
+    if retry and specific:
+        return retry + " Without that key: " + specific
+    return retry or specific
+
+
+def _failure_advice(method, path):
     if method == "POST" and TRIGGER_RE.fullmatch(path):
         return ("The schedule may already have emailed its recipients and charged credits. Check "
                 "GET /email-schedules (lastSent and totalSentCount) before triggering it again.")
@@ -1007,12 +1094,13 @@ def decode_inline_file(entry):
 # --------------------------------------------------------------------------
 
 class Context(object):
-    def __init__(self, args, method, path, api_key, output_dir):
+    def __init__(self, args, method, path, api_key, output_dir, idempotency_key=None):
         self.args = args
         self.method = method
         self.path = path
         self.api_key = api_key
         self.output_dir = output_dir
+        self.idempotency_key = idempotency_key
 
 
 def download_api_path(ctx, link, name):
@@ -1140,6 +1228,131 @@ def save_json_copy(ctx, data):
     note("full response saved to %s" % result["path"])
 
 
+def is_job_accepted(data):
+    """A 202 body that names a background job (jobId + statusUrl)."""
+    return (isinstance(data, dict) and isinstance(data.get("jobId"), str)
+            and bool(JOB_ID_RE.fullmatch(data["jobId"])) and isinstance(data.get("statusUrl"), str))
+
+
+def is_export_answer(data):
+    payload = data.get("data") if isinstance(data, dict) else None
+    return isinstance(payload, dict) and isinstance(payload.get("files"), list)
+
+
+def job_progress_text(view):
+    text = str(view.get("phase") or "running")
+    progress = view.get("progress")
+    if isinstance(progress, dict) and progress.get("done") is not None:
+        label = progress.get("label")
+        total = progress.get("total")
+        text += " (%s%s%s)" % (str(label) + " " if label else "", progress.get("done"),
+                               "/%s" % total if total is not None else "")
+    elapsed = view.get("elapsedMs")
+    if isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool):
+        text += ", %d s so far" % int(elapsed / 1000)
+    return text
+
+
+def follow_advice(ctx, job_id):
+    text = ("The work keeps running on the server. Get its result later with: python3 smb_api.py GET /jobs/%s "
+            "(it waits for the result and saves any file the same way). Do not repeat the original request" % job_id)
+    if ctx.idempotency_key and is_job_route(ctx.method, ctx.path):
+        text += " without --idempotency-key %s (with that key it returns this same job)" % ctx.idempotency_key
+    return text + "."
+
+
+def job_summary(ctx, view, advice):
+    out = {"httpStatus": 202, "status": "running"}
+    for key in ("jobId", "kind", "phase", "progress", "elapsedMs", "statusUrl"):
+        if view.get(key) is not None:
+            out[key] = view.get(key)
+    if ctx.idempotency_key and is_job_route(ctx.method, ctx.path):
+        out["idempotencyKey"] = ctx.idempotency_key
+    out["advice"] = advice
+    return out
+
+
+def _retry_after_hint(view):
+    value = view.get("retryAfterSeconds")
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return min(value, 30)
+    return 5
+
+
+def follow_job(ctx, accepted):
+    """Follow a 202 answer with GET /jobs/<jobId> until it is final, then handle that answer like the original.
+
+    The job id is checked against JOB_ID_RE and the poll path is built from it: statusUrl and Location are
+    never followed as given. The final answer goes to handle_response with the ORIGINAL ctx, so an export
+    is saved by handle_export and a file answer by the attachment branch, exactly as without a 202.
+    """
+    job_id = accepted["jobId"]
+    if ctx.args.respond_async or ctx.args.no_wait:
+        emit(job_summary(ctx, accepted, follow_advice(ctx, job_id)))
+        return 0
+    deadline = time.monotonic() + ctx.args.job_timeout
+    poll_timeout = max(ctx.args.timeout, JOB_POLL_MIN_TIMEOUT)
+    view = accepted
+    last_text = None
+    failures = 0
+    while True:
+        text = job_progress_text(view)
+        if text != last_text:
+            note("job %s is still running: %s" % (job_id, text))
+            last_text = text
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            emit(job_summary(ctx, view, "Stopped following it after --job-timeout. " + follow_advice(ctx, job_id)))
+            return 0
+        wait = int(max(0, min(JOB_POLL_WAIT_SECONDS, remaining)))
+        _, build = api_request_builder("GET", "/jobs/" + job_id, [], ctx.api_key, None, {"Prefer": "wait=%d" % wait})
+        started = time.monotonic()
+        try:
+            status, response = perform(build, poll_timeout, not ctx.args.no_retry)
+            job_status = response.headers.get("X-SMBSB-Job-Status") if response.headers is not None else None
+            # A 429 or 503 without X-SMBSB-Job-Status refused the poll itself (rate limit, a temporary
+            # server problem); the job is not affected, so it counts like a dropped connection.
+            refused = status in (429, 503) and not job_status
+            raw = read_body(response) if status in (202, 404) or refused else None
+            if refused:
+                raise NetworkError("the poll was refused with HTTP %d" % status)
+        except NetworkError as exc:
+            failures += 1
+            if failures >= JOB_POLL_MAX_NETWORK_FAILURES:
+                result = job_summary(ctx, view, follow_advice(ctx, job_id))
+                result["error"] = "network_error"
+                result["message"] = "Following the job failed: %s." % exc
+                emit(result)
+                return 3
+            note("polling job %s failed (%s); trying again" % (job_id, exc))
+            time.sleep(max(1, min(5, remaining)))
+            continue
+        failures = 0
+        if status in (202, 404):
+            try:
+                data = json.loads(raw.decode("utf-8")) if raw else None
+            except (ValueError, UnicodeDecodeError):
+                data = None
+            if status == 202 and is_job_accepted(data):
+                view = data
+                if time.monotonic() - started < 1:
+                    time.sleep(max(0, min(_retry_after_hint(view), deadline - time.monotonic())))
+                continue
+            result = {"httpStatus": status, "jobId": job_id}
+            if isinstance(data, dict):
+                result.update(data)
+            if status == 404:
+                # The job is gone: a server restart interrupts running jobs and forgets kept results.
+                result["advice"] = ("The job is no longer known to the server (it finished more than about a day "
+                                    "ago, or a server restart interrupted it). " + (_failure_advice(ctx.method, ctx.path)
+                                                 or "Check what it already saved before running it again."))
+            else:
+                result["error"] = result.get("error") or "unexpected_response"
+            emit(result)
+            return 1
+        return handle_response(ctx, status, response)
+
+
 def handle_response(ctx, status, response):
     headers = response.headers
     report_headers(headers)
@@ -1161,6 +1374,9 @@ def handle_response(ctx, status, response):
     except (ValueError, UnicodeDecodeError):
         data, is_json = None, False
 
+    if is_json and status == 202 and is_job_accepted(data):
+        return follow_job(ctx, data)
+
     if not is_json:
         if ok and ctype in EXTENSION_BY_CONTENT_TYPE:
             saved = write_bytes(ctx.output_dir, safe_filename(None, EXTENSION_BY_CONTENT_TYPE[ctype]), raw)
@@ -1177,7 +1393,7 @@ def handle_response(ctx, status, response):
         if status in (502, 504, 520, 522, 524):
             result["message"] = ("The request timed out at the network edge (HTTP %d). The server may "
                                  "still be working on it." % status)
-        advice = failure_advice(ctx.method, ctx.path)
+        advice = failure_advice(ctx.method, ctx.path, ctx.idempotency_key)
         if is_integration_change(ctx.method, ctx.path) and status in (429, 503):
             result["advice"] = integration_no_retry_advice(ctx.method, ctx.path, status, None)
         elif advice and status >= 500:
@@ -1204,6 +1420,9 @@ def handle_response(ctx, status, response):
         return 1
 
     if ctx.method == "POST" and EXPORT_RE.fullmatch(ctx.path):
+        return handle_export(ctx, data, headers)
+    if ctx.method == "GET" and JOB_STATUS_RE.fullmatch(ctx.path) and is_export_answer(data):
+        # GET /jobs/<jobId> called directly for an export: save its files like the export itself.
         return handle_export(ctx, data, headers)
     link_match = HISTORY_LINK_RE.fullmatch(ctx.path)
     enrich_match = ENRICHMENT_LINK_RE.fullmatch(ctx.path)
@@ -1245,6 +1464,16 @@ def _timeout_seconds(text):
     return value
 
 
+def _job_timeout_seconds(text):
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a number of seconds")
+    if not 1 <= value <= 86400:
+        raise argparse.ArgumentTypeError("must be between 1 and 86400 seconds")
+    return value
+
+
 CONFIRM_HELP = """\
 --confirm is required (nothing is sent without it) for:
   money:        POST /purchase, POST /purchase-credits, POST /subscription/change-plan,
@@ -1267,6 +1496,12 @@ values are refused before anything is sent. On GET /leads, limit must be a whole
 429 and 503 responses are retried automatically (Retry-After up to 60 s), except on calls that
 change or send through an integration (anything but GET under /integrations): those return the
 error with advice to check GET /integrations or the delivery log first.
+
+Long-running calls (POST /leads/export, /email-schedules/{id}/trigger, /ai/suggest-categories,
+/lead-export-history/refresh, /refresh-and-export and /re-export) send an Idempotency-Key and
+follow a 202 answer (GET /jobs/<jobId>) until the result is ready; --async and --no-wait print
+the jobId instead. Re-run a call that timed out with the --idempotency-key it printed: the server
+returns the same job instead of exporting or sending again.
 """
 
 
@@ -1290,6 +1525,12 @@ def parse_args(argv):
     parser.add_argument("--out", default=None)
     parser.add_argument("--compact", action="store_true")
     parser.add_argument("--idempotency-key", default=None)
+    parser.add_argument("--async", dest="respond_async", action="store_true",
+                        help="long-running calls: answer 202 with a jobId at once and print it")
+    parser.add_argument("--no-wait", action="store_true",
+                        help="long-running calls: print the jobId of a 202 answer instead of following it")
+    parser.add_argument("--job-timeout", type=_job_timeout_seconds, default=DEFAULT_JOB_TIMEOUT,
+                        help="seconds to follow a 202 answer before printing the jobId instead (default 3600)")
     parser.add_argument("--timeout", type=_timeout_seconds, default=DEFAULT_TIMEOUT)
     parser.add_argument("--no-retry", action="store_true")
     parser.add_argument("--no-fetch", action="store_true")
@@ -1347,16 +1588,26 @@ def run(args):
 
     extra_headers = {}
     idempotency_key = None
-    if method == "POST" and path == "/purchase-credits":
-        body_key = (body or {}).get("idempotencyKey")
+    job_route = is_job_route(method, path)
+    if method == "POST" and (path == "/purchase-credits" or job_route):
+        # purchase-credits: Stripe's key; long-running calls: the server returns the same job for the same key.
+        body_key = (body or {}).get("idempotencyKey") if path == "/purchase-credits" else None
         if args.idempotency_key and body_key not in (None, args.idempotency_key):
             raise UsageError("the body idempotencyKey and --idempotency-key differ; use only one of them")
         idempotency_key = args.idempotency_key or body_key or ("smbsk-" + secrets.token_hex(12))
         if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", str(idempotency_key)):
             raise UsageError("--idempotency-key must be 8-64 characters of letters, digits, _ or -")
         extra_headers["Idempotency-Key"] = idempotency_key
-        if isinstance(body, dict):
+        if path == "/purchase-credits" and isinstance(body, dict):
             body["idempotencyKey"] = idempotency_key  # the server prefers the body value; keep them identical
+    elif args.idempotency_key:
+        notes.append("--idempotency-key is used only by POST /purchase-credits and the long-running calls "
+                     "(see --help); it was not sent")
+    prefer = job_prefer_header(args, method, path)
+    if prefer:
+        extra_headers["Prefer"] = prefer
+    if (args.respond_async or args.no_wait) and not (job_route or JOB_STATUS_RE.fullmatch(path)):
+        notes.append("--async and --no-wait only change the long-running calls and GET /jobs/<jobId>")
 
     reason = confirmation_reason(method, path, body, dict(query_pairs))
     url, build = api_request_builder(method, path, query_pairs, api_key, body, extra_headers)
@@ -1373,6 +1624,7 @@ def run(args):
             "body": body,
             "confirmationRequired": reason,
             "idempotencyKey": idempotency_key,
+            "prefer": extra_headers.get("Prefer"),
         })
         return 0
 
@@ -1388,11 +1640,15 @@ def run(args):
     if not api_key and not is_public:
         raise UsageError("no API key: set the %s environment variable (keys start with smbk_)" % KEY_ENV_VAR_NAME)
 
-    if idempotency_key:
+    if idempotency_key and path == "/purchase-credits":
         note("Idempotency-Key: %s (if this call times out, retry within 24 hours with --idempotency-key %s "
              "so it is not charged twice)" % (idempotency_key, idempotency_key))
+    elif idempotency_key:
+        note("Idempotency-Key: %s (if this call times out, re-run it with --idempotency-key %s: the server "
+             "returns the same job instead of running it again; kept for up to %s after the job finishes, and a "
+             "server restart forgets it)" % (idempotency_key, idempotency_key, job_key_kept(path)))
 
-    ctx = Context(args, method, path, api_key, OutputDir(args.output_dir))
+    ctx = Context(args, method, path, api_key, OutputDir(args.output_dir), idempotency_key)
     if writes_files(args, method, path):
         ctx.output_dir.path()  # create the folder now, so a folder problem stops us before anything is charged
     try:
@@ -1421,7 +1677,7 @@ def writes_files(args, method, path):
     if method == "POST" and (EXPORT_RE.fullmatch(path) or path in (
             "/lead-export-history/re-export", "/lead-export-history/refresh-and-export")):
         return True
-    if method == "GET" and path.endswith("/download"):
+    if method == "GET" and (path.endswith("/download") or JOB_STATUS_RE.fullmatch(path)):
         return True
     return method == "GET" and bool(HISTORY_LINK_RE.fullmatch(path) or ENRICHMENT_LINK_RE.fullmatch(path)) \
         and not args.no_fetch
@@ -1436,7 +1692,7 @@ DEFAULT_FAILURE_ADVICE = (
 
 def report_network_failure(method, path, idempotency_key, message):
     result = {"error": "network_error", "message": message,
-              "advice": failure_advice(method, path) or DEFAULT_FAILURE_ADVICE}
+              "advice": failure_advice(method, path, idempotency_key) or DEFAULT_FAILURE_ADVICE}
     if idempotency_key:
         result["idempotencyKey"] = idempotency_key
     emit(result)
